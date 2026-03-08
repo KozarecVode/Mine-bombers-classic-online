@@ -1,0 +1,86 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Minebombers</title>
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      background: #1a1a1a;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      justify-content: center;
+      min-height: 100vh;
+      font-family: 'Courier New', monospace;
+      color: #eee;
+    }
+    h1 {
+      font-size: 2.2rem;
+      color: #ffdd00;
+      letter-spacing: 6px;
+      text-shadow: 3px 3px 0 #b08800;
+      margin-bottom: 1.5rem;
+    }
+
+    #lobby { display: flex; flex-direction: column; gap: 0.75rem; align-items: center; }
+    input {
+      background: #222;
+      border: 2px solid #ffdd00;
+      color: #eee;
+      padding: 0.4rem 1rem;
+      font-size: 1rem;
+      font-family: inherit;
+      width: 180px;
+      text-align: center;
+      border-radius: 2px;
+    }
+    button {
+      background: #ffdd00;
+      color: #111;
+      border: none;
+      padding: 0.5rem 2rem;
+      font-size: 1rem;
+      font-family: inherit;
+      font-weight: bold;
+      letter-spacing: 3px;
+      cursor: pointer;
+      border-radius: 2px;
+    }
+    button:hover { background: #ffe844; }
+
+    #game { display: none; flex-direction: column; align-items: center; gap: 6px; }
+    canvas {
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      border: 4px solid #555;
+      box-shadow: 0 0 0 2px #333, 0 0 20px rgba(0,0,0,0.8);
+      max-width: 100vw;
+      max-height: 90vh;
+      width: auto;
+      height: auto;
+    }
+    #hud {
+      font-size: 0.75rem;
+      color: #666;
+      letter-spacing: 2px;
+    }
+  </style>
+</head>
+<body>
+  <h1>MINEBOMBERS</h1>
+
+  <div id="lobby">
+    <input id="nameInput" type="text" placeholder="Enter name" maxlength="12" value="Player" />
+    <button id="joinBtn">PLAY</button>
+    <div id="status" style="font-size:0.8rem;color:#aaa;min-height:1.2em;"></div>
+  </div>
+
+  <div id="game">
+    <canvas id="canvas"></canvas>
+    <div id="hud">ARROWS / WASD — move</div>
+  </div>
+
+  <script type="module" src="/src/main.ts"></script>
+</body>
+</html>
