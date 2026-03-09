@@ -108,10 +108,11 @@ export class TntManager {
       // disabled phase: stays on map indefinitely — no transition to 'done'
     }
 
-    // Chain: if an exploding TNT's cells cover a dud's tile, trigger the dud
+    // Chain: only the fire half (first 6 frames) of an explosion can trigger other TNTs
+    const CHAIN_FRAME_CUTOFF = 6;
     const explodingCells = new Set<string>();
     for (const e of this.entities) {
-      if (e.phase === 'exploding') {
+      if (e.phase === 'exploding' && Math.floor(e.tick / EXPLODE_TICKS_PER_FRAME) < CHAIN_FRAME_CUTOFF) {
         for (const [col, row] of this.explosionCells(e)) {
           explodingCells.add(`${col},${row}`);
         }
