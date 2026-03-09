@@ -2,6 +2,7 @@ import { TILE_SIZE, MAP_WIDTH, MAP_HEIGHT, HUD_HEIGHT } from "@minebombers/share
 import { Terrain } from "./terrain.js";
 import { LocalPlayer } from "./game.js";
 import { Assets } from "./assets.js";
+import { TntManager, TntEntity } from "./tnt.js";
 
 const DISPLAY_SCALE = 2; // render everything at 2× — game logic stays at native tile size
 
@@ -63,9 +64,10 @@ export class Renderer {
     return oc;
   }
 
-  render(assets: Assets, terrain: Terrain, players: LocalPlayer[], myPlayer: LocalPlayer): void {
+  render(assets: Assets, terrain: Terrain, players: LocalPlayer[], myPlayer: LocalPlayer, tnt: TntManager): void {
     this.drawHud(players, myPlayer);
     this.drawTerrain(terrain);
+    this.drawTnt(assets, tnt);
     for (const p of players) this.drawPlayer(assets, p);
   }
 
@@ -133,6 +135,40 @@ export class Renderer {
       this.terrainCanvas = this.buildTerrainCanvas(terrain, this._assets);
     }
     this.ctx.drawImage(this.terrainCanvas!, 0, HUD_HEIGHT);
+  }
+
+  // ── TNT ────────────────────────────────────────────────────────────────────
+
+  private drawTnt(assets: Assets, tnt: TntManager): void {
+    for (const e of tnt.getEntities()) {
+      if (e.phase === 'exploding') {
+        this.drawTntExplosion(assets, tnt, e);
+      }
+      this.drawTntSprite(assets, tnt, e);
+    }
+  }
+
+  private drawTntSprite(assets: Assets, tnt: TntManager, e: TntEntity): void {
+    let sprite: HTMLCanvasElement;
+    if (e.phase === 'fusing') {
+      sprite = assets.tnt.fuse[tnt.fuseFrame(e)];
+    } else if (e.phase === 'disabled') {
+      sprite = assets.tnt.disabled;
+    } else {
+      return; // exploding phase — only show explosion cells
+    }
+    const x = e.tileX * TILE_SIZE;
+    const y = e.tileY * TILE_SIZE + HUD_HEIGHT;
+    this.ctx.drawImage(sprite, x, y, TILE_SIZE, TILE_SIZE);
+  }
+
+  private drawTntExplosion(assets: Assets, tnt: TntManager, e: TntEntity): void {
+    const frame = assets.tnt.explosion[tnt.explosionFrame(e)];
+    for (const [col, row] of tnt.explosionCells(e)) {
+      const x = col * TILE_SIZE;
+      const y = row * TILE_SIZE + HUD_HEIGHT;
+      this.ctx.drawImage(frame, x, y, TILE_SIZE, TILE_SIZE);
+    }
   }
 
   // ── Player ─────────────────────────────────────────────────────────────────

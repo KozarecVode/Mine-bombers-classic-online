@@ -1,8 +1,10 @@
+import { TILE_SIZE } from '@minebombers/shared';
 import { InputManager } from './input.js';
 import { Renderer } from './renderer.js';
 import { createLocalPlayer, updatePlayer } from './game.js';
 import { generateTerrain } from './terrain.js';
 import { loadAssets, Assets } from './assets.js';
+import { TntManager } from './tnt.js';
 
 const lobbyEl   = document.getElementById('lobby')!;
 const gameEl    = document.getElementById('game')!;
@@ -14,6 +16,7 @@ const input    = new InputManager();
 const renderer = new Renderer();
 const terrain  = generateTerrain();
 const player   = createLocalPlayer('Player', 0);
+const tntMgr   = new TntManager();
 
 let assets: Assets;
 
@@ -45,6 +48,8 @@ function loop(ts: number): void {
   requestAnimationFrame(loop);
   if (ts - last < TARGET_MS) return;
   last = ts;
-  updatePlayer(player, input.getDirection(), terrain);
-  renderer.render(assets, terrain, [player], player);
+  updatePlayer(player, input.getDirection(), input.consumeStopPress(), terrain, tntMgr);
+  if (input.consumeTntPress()) tntMgr.place(player.tileX * TILE_SIZE, player.tileY * TILE_SIZE, player.moving ? 'none' : player.dir, terrain);
+  tntMgr.update(player.x, player.y, terrain);
+  renderer.render(assets, terrain, [player], player, tntMgr);
 }

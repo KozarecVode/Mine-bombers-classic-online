@@ -7,6 +7,11 @@ export interface Assets {
     left:  HTMLCanvasElement[];
     right: HTMLCanvasElement[];
   };
+  tnt: {
+    fuse:      HTMLCanvasElement[]; // [tnt_1, tnt_2, tnt_10]
+    disabled:  HTMLCanvasElement;
+    explosion: HTMLCanvasElement[]; // interpolated sequence from explosion_1→2→3
+  };
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {
@@ -49,6 +54,53 @@ async function loadFrames(dir: string, prefix: string, n: number): Promise<HTMLC
   return imgs.map(removeBg);
 }
 
+/**
+ * Cross-fade between consecutive keyframes, generating `steps` intermediate
+ * canvases between each pair.  With 3 source frames and steps=4 you get 11
+ * frames total: [f1, blend×4, f2, blend×4, f3].
+ */
+function interpolateFrames(frames: HTMLCanvasElement[], steps: number): HTMLCanvasElement[] {
+  const result: HTMLCanvasElement[] = [];
+  for (let i = 0; i < frames.length; i++) {
+    result.push(frames[i]);
+    if (i < frames.length - 1) {
+      const a = frames[i];
+      const b = frames[i + 1];
+      for (let s = 1; s <= steps; s++) {
+        const t = s / (steps + 1);
+        const c = document.createElement('canvas');
+        c.width  = a.width;
+        c.height = a.height;
+        const ctx = c.getContext('2d')!;
+        ctx.globalAlpha = 1 - t;
+        ctx.drawImage(a, 0, 0);
+        ctx.globalAlpha = t;
+        ctx.drawImage(b, 0, 0);
+        ctx.globalAlpha = 1;
+        result.push(c);
+      }
+    }
+  }
+  return result;
+}
+
+async function loadTntAssets(): Promise<Assets['tnt']> {
+  const [t1, t2, t3, disabled, e1, e2, e3] = await Promise.all([
+    loadImage('/art/texture/tnt/weapons/tnt_1.png'),
+    loadImage('/art/texture/tnt/weapons/tnt_2.png'),
+    loadImage('/art/texture/tnt/weapons/tnt_10.png'),
+    loadImage('/art/texture/tnt/weapons/tnt_disabled.png'),
+    loadImage('/art/texture/tnt/explosion/explosion_1.png'),
+    loadImage('/art/texture/tnt/explosion/explosion_2.png'),
+    loadImage('/art/texture/tnt/explosion/explosion_3.png'),
+  ]);
+  return {
+    fuse:      [t1, t2, t3].map(removeBg),
+    disabled:  removeBg(disabled),
+    explosion: interpolateFrames([e1, e2, e3].map(removeBg), 4),
+  };
+}
+
 export function loadAssets(): Promise<Assets> {
   return Promise.all([
     loadImage('/art/texture/ground.png'),
@@ -57,8 +109,10 @@ export function loadAssets(): Promise<Assets> {
     loadFrames('down',  'mb_mans_down_', 4),
     loadFrames('left',  'mb_mans_l_',    4),
     loadFrames('right', 'mb_mans_r_',    4),
-  ]).then(([ground, wall, up, down, left, right]) => ({
+    loadTntAssets(),
+  ]).then(([ground, wall, up, down, left, right, tnt]) => ({
     ground, wall,
     walk: { up, down, left, right },
+    tnt,
   }));
 }
