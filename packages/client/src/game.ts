@@ -1,8 +1,12 @@
 import { TILE_SIZE, PLAYER_SPEED } from '@minebombers/shared';
 import { Terrain, isStone } from './terrain.js';
-import { TntManager } from './tnt.js';
 
 export type Dir = 'up' | 'down' | 'left' | 'right' | 'none';
+
+interface WeaponMgr {
+  hasSolidAt(col: number, row: number): boolean;
+  tryPush(col: number, row: number, dcol: number, drow: number, terrain: Terrain): boolean;
+}
 
 export interface LocalPlayer {
   x: number;           // pixel position (interpolated, top-left of sprite)
@@ -47,7 +51,7 @@ export function updatePlayer(
   dir: Dir,
   stopPressed: boolean,
   terrain: Terrain,
-  tntMgr?: TntManager,
+  weapons: WeaponMgr[] = [],
 ): void {
   if (stopPressed) player.pendingStop = true;
 
@@ -62,7 +66,7 @@ export function updatePlayer(
       player.targetTileY = player.tileY;
       player.dir = dir;
       player.pendingStop = false;
-      startMove(player, dir, terrain, tntMgr);
+      startMove(player, dir, terrain, weapons);
     }
 
     if (player.moving) {
@@ -84,7 +88,7 @@ export function updatePlayer(
         } else {
           const nextDir = dir !== 'none' ? dir : player.dir;
           if (dir !== 'none') player.dir = dir;
-          startMove(player, nextDir, terrain, tntMgr);
+          startMove(player, nextDir, terrain, weapons);
         }
       } else {
         // Advance toward target tile
@@ -97,7 +101,7 @@ export function updatePlayer(
     if (dir !== 'none') {
       player.dir = dir;
       player.pendingStop = false;
-      startMove(player, dir, terrain, tntMgr);
+      startMove(player, dir, terrain, weapons);
     }
   }
 
@@ -117,7 +121,7 @@ function startMove(
   player: LocalPlayer,
   dir: Dir,
   terrain: Terrain,
-  tntMgr?: TntManager,
+  weapons: WeaponMgr[],
 ): void {
   const dcol = dir === 'right' ? 1 : dir === 'left' ? -1 : 0;
   const drow = dir === 'down'  ? 1 : dir === 'up'   ? -1 : 0;
@@ -128,10 +132,13 @@ function startMove(
     player.moving = false;
     return;
   }
-  if (tntMgr && tntMgr.hasSolidAt(nc, nr)) {
-    if (!tntMgr.tryPush(nc, nr, dcol, drow, terrain)) {
-      player.moving = false;
-      return;
+  for (const w of weapons) {
+    if (w.hasSolidAt(nc, nr)) {
+      if (!w.tryPush(nc, nr, dcol, drow, terrain)) {
+        player.moving = false;
+        return;
+      }
+      break; // pushed one weapon, allow move
     }
   }
 

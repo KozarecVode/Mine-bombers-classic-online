@@ -12,6 +12,7 @@ export interface TntEntity {
   phase: TntPhase;
   tick: number;
   grace: boolean; // passable until player's hitbox no longer overlaps this tile
+  cells: [number, number][]; // explosion cells, computed at trigger time
 }
 
 // ── Constants ────────────────────────────────────────────────────────────────
@@ -72,7 +73,7 @@ export class TntManager {
     if (isStone(terrain, tileX, tileY)) return;
     if (this.entities.some(e => e.tileX === tileX && e.tileY === tileY)) return;
 
-    this.entities.push({ id: this.nextId++, tileX, tileY, phase: 'fusing', tick: 0, grace: true });
+    this.entities.push({ id: this.nextId++, tileX, tileY, phase: 'fusing', tick: 0, grace: true, cells: [] });
   }
 
   // SPRITE hitbox constants (must match game.ts)
@@ -108,40 +109,58 @@ export class TntManager {
       // disabled phase: stays on map indefinitely — no transition to 'done'
     }
 
-    // Chain: only the fire half (first 6 frames) of an explosion can trigger other TNTs
-    const CHAIN_FRAME_CUTOFF = 6;
-    const explodingCells = new Set<string>();
-    for (const e of this.entities) {
-      if (e.phase === 'exploding' && Math.floor(e.tick / EXPLODE_TICKS_PER_FRAME) < CHAIN_FRAME_CUTOFF) {
-        for (const [col, row] of this.explosionCells(e)) {
-          explodingCells.add(`${col},${row}`);
-        }
-      }
-    }
-    for (const e of this.entities) {
-      if ((e.phase === 'fusing' || e.phase === 'disabled') && explodingCells.has(`${e.tileX},${e.tileY}`)) {
-        e.phase = 'exploding';
-        e.tick = 0;
-        this.applyExplosion(e, terrain);
-      }
-    }
-
+    this.chainDetonate(this.getFireCells(), terrain);
     this.entities = this.entities.filter(e => e.phase !== 'done');
   }
 
   private applyExplosion(e: TntEntity, terrain: Terrain): void {
-    for (const [dx, dy] of TNT_PATTERN) {
-      const col = e.tileX + dx;
-      const row = e.tileY + dy;
-      if (row >= 0 && row < terrain.length && col >= 0 && col < terrain[0].length) {
-        // Only destroy non-permanent soft blocks (border walls stay)
-        const isBorder = row === 0 || row === terrain.length - 1
-                      || col === 0 || col === terrain[0].length - 1;
-        if (!isBorder && terrain[row][col]) {
-          terrain[row][col] = false;
+    e.cells = this.computeTntCells(e.tileX, e.tileY, terrain);
+    for (const [col, row] of e.cells) {
+      const isBorder = row === 0 || row === terrain.length - 1
+                    || col === 0 || col === terrain[0].length - 1;
+      if (!isBorder && terrain[row]?.[col]) terrain[row][col] = false;
+    }
+  }
+
+  /**
+   * BFS flood-fill through TNT_PATTERN from the bomb's origin.
+   * Walls stop the flood from spreading further but are included as the
+   * last cell in that path (so soft blocks get destroyed).
+   * Border tiles are never included.
+   */
+  private computeTntCells(tileX: number, tileY: number, terrain: Terrain): [number, number][] {
+    const rows = terrain.length, cols = terrain[0].length;
+    const patternSet = new Set(TNT_PATTERN.map(([dx, dy]) => `${dx},${dy}`));
+
+    const visited = new Set<string>();
+    const result: [number, number][] = [];
+    const queue: [number, number][] = [[0, 0]];
+    visited.add('0,0');
+
+    while (queue.length > 0) {
+      const [dx, dy] = queue.shift()!;
+      const col = tileX + dx, row = tileY + dy;
+      if (row < 0 || row >= rows || col < 0 || col >= cols) continue;
+
+      const isBorder = row === 0 || row === rows - 1 || col === 0 || col === cols - 1;
+      const isWall = isStone(terrain, col, row);
+      if (isBorder && isWall) continue; // permanent border — skip entirely
+
+      result.push([col, row]);
+
+      if (!isWall) {
+        for (const [ndx, ndy] of [[dx+1,dy],[dx-1,dy],[dx,dy+1],[dx,dy-1]] as [number,number][]) {
+          const key = `${ndx},${ndy}`;
+          if (!visited.has(key) && patternSet.has(key)) {
+            visited.add(key);
+            queue.push([ndx, ndy]);
+          }
         }
       }
+      // wall tile: include it (destroy soft block) but don't spread beyond
     }
+
+    return result;
   }
 
   /** Returns the current fuse sprite frame index (0-2) for a fusing TNT. */
@@ -156,7 +175,7 @@ export class TntManager {
 
   /** Returns the explosion cells for an entity currently in the exploding phase. */
   explosionCells(e: TntEntity): [number, number][] {
-    return TNT_PATTERN.map(([dx, dy]) => [e.tileX + dx, e.tileY + dy]);
+    return e.cells;
   }
 
   hasSolidAt(col: number, row: number): boolean {
@@ -182,6 +201,28 @@ export class TntManager {
     e.tileX = nc;
     e.tileY = nr;
     return true;
+  }
+
+  /** Returns fire-phase explosion tile keys (first 6 frames only). */
+  getFireCells(): Set<string> {
+    const cells = new Set<string>();
+    for (const e of this.entities) {
+      if (e.phase === 'exploding' && Math.floor(e.tick / EXPLODE_TICKS_PER_FRAME) < 6) {
+        for (const [col, row] of this.explosionCells(e)) cells.add(`${col},${row}`);
+      }
+    }
+    return cells;
+  }
+
+  /** Trigger any fusing/disabled entities whose tile is in the given cell set. */
+  chainDetonate(cells: Set<string>, terrain: Terrain): void {
+    for (const e of this.entities) {
+      if ((e.phase === 'fusing' || e.phase === 'disabled') && cells.has(`${e.tileX},${e.tileY}`)) {
+        e.phase = 'exploding';
+        e.tick = 0;
+        this.applyExplosion(e, terrain);
+      }
+    }
   }
 
   getEntities(): TntEntity[] {

@@ -12,6 +12,26 @@ export interface Assets {
     disabled:  HTMLCanvasElement;
     explosion: HTMLCanvasElement[]; // interpolated sequence from explosion_1→2→3
   };
+  bigcross: {
+    fuse:      HTMLCanvasElement[]; // single sprite repeated across all fuse frames
+    explosion: HTMLCanvasElement[]; // shared explosion animation
+  };
+  smallcross: {
+    fuse:      HTMLCanvasElement[];
+    explosion: HTMLCanvasElement[];
+  };
+  grenade: HTMLCanvasElement;
+  landmine: HTMLCanvasElement;
+  smallbomb: {
+    fuse:      HTMLCanvasElement[];
+    disabled:  HTMLCanvasElement;
+    explosion: HTMLCanvasElement[];
+  };
+  bigbomb: {
+    fuse:      HTMLCanvasElement[];
+    disabled:  HTMLCanvasElement;
+    explosion: HTMLCanvasElement[];
+  };
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {
@@ -34,12 +54,11 @@ function removeBg(img: HTMLImageElement): HTMLCanvasElement {
   const data = ctx.getImageData(0, 0, c.width, c.height);
   const px = data.data;
 
-  // Sample background color from top-left pixel
   const bgR = px[0], bgG = px[1], bgB = px[2];
 
   for (let i = 0; i < px.length; i += 4) {
     if (px[i] === bgR && px[i + 1] === bgG && px[i + 2] === bgB) {
-      px[i + 3] = 0; // fully transparent
+      px[i + 3] = 0;
     }
   }
 
@@ -84,35 +103,81 @@ function interpolateFrames(frames: HTMLCanvasElement[], steps: number): HTMLCanv
   return result;
 }
 
-async function loadTntAssets(): Promise<Assets['tnt']> {
-  const [t1, t2, t3, disabled, e1, e2, e3] = await Promise.all([
-    loadImage('/art/texture/tnt/weapons/tnt_1.png'),
-    loadImage('/art/texture/tnt/weapons/tnt_2.png'),
-    loadImage('/art/texture/tnt/weapons/tnt_10.png'),
-    loadImage('/art/texture/tnt/weapons/tnt_disabled.png'),
-    loadImage('/art/texture/tnt/explosion/explosion_1.png'),
-    loadImage('/art/texture/tnt/explosion/explosion_2.png'),
-    loadImage('/art/texture/tnt/explosion/explosion_3.png'),
+async function loadExplosionFrames(): Promise<HTMLCanvasElement[]> {
+  const [e1, e2, e3] = await Promise.all([
+    loadImage('/art/texture/explosion/explosion_1.png'),
+    loadImage('/art/texture/explosion/explosion_2.png'),
+    loadImage('/art/texture/explosion/explosion_3.png'),
+  ]);
+  return interpolateFrames([e1, e2, e3].map(removeBg), 4);
+}
+
+async function loadTntAssets(explosion: HTMLCanvasElement[]): Promise<Assets['tnt']> {
+  const [t1, t2, t3, disabled] = await Promise.all([
+    loadImage('/art/texture/weapons/tnt/tnt_1.png'),
+    loadImage('/art/texture/weapons/tnt/tnt_2.png'),
+    loadImage('/art/texture/weapons/tnt/tnt_10.png'),
+    loadImage('/art/texture/weapons/tnt/tnt_disabled.png'),
   ]);
   return {
     fuse:      [t1, t2, t3].map(removeBg),
     disabled:  removeBg(disabled),
-    explosion: interpolateFrames([e1, e2, e3].map(removeBg), 4),
+    explosion,
   };
 }
 
-export function loadAssets(): Promise<Assets> {
-  return Promise.all([
-    loadImage('/art/texture/ground.png'),
-    loadImage('/art/texture/wall.png'),
+async function loadSmallBombAssets(explosion: HTMLCanvasElement[]): Promise<Assets['smallbomb']> {
+  const [s1, s2, s3, disabled] = await Promise.all([
+    loadImage('/art/texture/weapons/small_bomb/small_bomb_1.png'),
+    loadImage('/art/texture/weapons/small_bomb/small_bomb_2.png'),
+    loadImage('/art/texture/weapons/small_bomb/small_bomb_3.png'),
+    loadImage('/art/texture/weapons/small_bomb/small_bomb_disabled.png'),
+  ]);
+  return { fuse: [s1, s2, s3].map(removeBg), disabled: removeBg(disabled), explosion };
+}
+
+async function loadBigBombAssets(explosion: HTMLCanvasElement[]): Promise<Assets['bigbomb']> {
+  const [b1, b2, b3, disabled] = await Promise.all([
+    loadImage('/art/texture/weapons/big_bomb/big_bomb_1.png'),
+    loadImage('/art/texture/weapons/big_bomb/big_bomb_2.png'),
+    loadImage('/art/texture/weapons/big_bomb/big_bomb_3.png'),
+    loadImage('/art/texture/weapons/big_bomb/big_bomb_disabled.png'),
+  ]);
+  return { fuse: [b1, b2, b3].map(removeBg), disabled: removeBg(disabled), explosion };
+}
+
+async function loadBigCrossAssets(explosion: HTMLCanvasElement[]): Promise<Assets['bigcross']> {
+  const bc1 = await loadImage('/art/texture/weapons/big_cross/big_cross_1.png');
+  const sprite = removeBg(bc1);
+  return { fuse: [sprite, sprite, sprite], explosion };
+}
+
+async function loadSmallCrossAssets(explosion: HTMLCanvasElement[]): Promise<Assets['smallcross']> {
+  const sc1 = await loadImage('/art/texture/weapons/small_cross/small_cross_1.png');
+  const sprite = removeBg(sc1);
+  return { fuse: [sprite, sprite, sprite], explosion };
+}
+
+export async function loadAssets(): Promise<Assets> {
+  const [ground, wall, up, down, left, right, explosion] = await Promise.all([
+    loadImage('/art/texture/world/ground.png'),
+    loadImage('/art/texture/world/wall.png'),
     loadFrames('top',   'mb_mans_top_',  4),
     loadFrames('down',  'mb_mans_down_', 4),
     loadFrames('left',  'mb_mans_l_',    4),
     loadFrames('right', 'mb_mans_r_',    4),
-    loadTntAssets(),
-  ]).then(([ground, wall, up, down, left, right, tnt]) => ({
-    ground, wall,
-    walk: { up, down, left, right },
-    tnt,
-  }));
+    loadExplosionFrames(),
+  ]);
+  const [tnt, bigcross, smallcross, grenadeImg, smallbomb, bigbomb, landmineImg] = await Promise.all([
+    loadTntAssets(explosion),
+    loadBigCrossAssets(explosion),
+    loadSmallCrossAssets(explosion),
+    loadImage('/art/texture/weapons/grenade/grenade.png'),
+    loadSmallBombAssets(explosion),
+    loadBigBombAssets(explosion),
+    loadImage('/art/texture/weapons/landmine/landmine.png'),
+  ]);
+  const grenade  = removeBg(grenadeImg);
+  const landmine = removeBg(landmineImg);
+  return { ground, wall, walk: { up, down, left, right }, tnt, bigcross, smallcross, grenade, smallbomb, bigbomb, landmine };
 }

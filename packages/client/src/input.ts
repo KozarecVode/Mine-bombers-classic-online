@@ -4,6 +4,8 @@ export class InputManager {
   private keys = new Set<string>();
   private _bombPressed = false;
   private _tntPressed = false;
+  private _bigCrossPressed = false;
+  private _weaponSwitchPressed = false;
   private _stopPressed = false;
 
   constructor() {
@@ -16,6 +18,13 @@ export class InputManager {
       if (e.code === 'Delete') {
         e.preventDefault();
         this._tntPressed = true;
+      }
+      if (e.code === 'KeyF') {
+        this._bigCrossPressed = true;
+      }
+      if (e.code === 'End') {
+        e.preventDefault();
+        this._weaponSwitchPressed = true;
       }
       if (e.code === 'KeyS') {
         this._stopPressed = true;
@@ -45,6 +54,20 @@ export class InputManager {
   consumeTntPress(): boolean {
     const v = this._tntPressed;
     this._tntPressed = false;
+    return v;
+  }
+
+  /** Returns true once per End keypress (edge-triggered) */
+  consumeWeaponSwitch(): boolean {
+    const v = this._weaponSwitchPressed;
+    this._weaponSwitchPressed = false;
+    return v;
+  }
+
+  /** Returns true once per F keypress (edge-triggered) */
+  consumeBigCrossPress(): boolean {
+    const v = this._bigCrossPressed;
+    this._bigCrossPressed = false;
     return v;
   }
 

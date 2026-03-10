@@ -3,6 +3,10 @@ import { Terrain } from "./terrain.js";
 import { LocalPlayer } from "./game.js";
 import { Assets } from "./assets.js";
 import { TntManager, TntEntity } from "./tnt.js";
+import { BigCrossManager } from "./bigcross.js";
+import { GrenadeManager } from "./grenade.js";
+import { BombManager } from "./bomb.js";
+import { LandmineManager } from "./landmine.js";
 
 const DISPLAY_SCALE = 2; // render everything at 2× — game logic stays at native tile size
 
@@ -64,10 +68,16 @@ export class Renderer {
     return oc;
   }
 
-  render(assets: Assets, terrain: Terrain, players: LocalPlayer[], myPlayer: LocalPlayer, tnt: TntManager): void {
+  render(assets: Assets, terrain: Terrain, players: LocalPlayer[], myPlayer: LocalPlayer, tnt: TntManager, bigCross: BigCrossManager, smallCross: BigCrossManager, grenade: GrenadeManager, smallBomb: BombManager, bigBomb: BombManager, landmine: LandmineManager): void {
     this.drawHud(players, myPlayer);
     this.drawTerrain(terrain);
     this.drawTnt(assets, tnt);
+    this.drawCross(assets.bigcross, bigCross);
+    this.drawCross(assets.smallcross, smallCross);
+    this.drawGrenades(assets, grenade);
+    this.drawBomb(assets.smallbomb, smallBomb);
+    this.drawBomb(assets.bigbomb, bigBomb);
+    this.drawLandmines(assets, landmine);
     for (const p of players) this.drawPlayer(assets, p);
   }
 
@@ -168,6 +178,70 @@ export class Renderer {
       const x = col * TILE_SIZE;
       const y = row * TILE_SIZE + HUD_HEIGHT;
       this.ctx.drawImage(frame, x, y, TILE_SIZE, TILE_SIZE);
+    }
+  }
+
+  // ── Big Cross ──────────────────────────────────────────────────────────────
+
+  private drawCross(crossAssets: { fuse: HTMLCanvasElement[]; explosion: HTMLCanvasElement[] }, mgr: BigCrossManager): void {
+    for (const e of mgr.getEntities()) {
+      if (e.phase === 'exploding') {
+        const frame = crossAssets.explosion[mgr.explosionFrame(e)];
+        for (const [col, row] of e.cells) {
+          this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+        }
+      } else if (e.phase === 'fusing') {
+        const sprite = crossAssets.fuse[mgr.fuseFrame(e)];
+        this.ctx.drawImage(sprite, e.tileX * TILE_SIZE, e.tileY * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+      }
+    }
+  }
+
+  // ── Bomb (small / big) ────────────────────────────────────────────────────
+
+  private drawBomb(bombAssets: { fuse: HTMLCanvasElement[]; disabled: HTMLCanvasElement; explosion: HTMLCanvasElement[] }, mgr: BombManager): void {
+    for (const e of mgr.getEntities()) {
+      if (e.phase === 'exploding') {
+        const frame = bombAssets.explosion[mgr.explosionFrame(e)];
+        for (const [col, row] of e.cells) {
+          this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+        }
+      } else if (e.phase === 'fusing') {
+        const sprite = bombAssets.fuse[mgr.fuseFrame(e)];
+        this.ctx.drawImage(sprite, e.tileX * TILE_SIZE, e.tileY * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+      } else if (e.phase === 'disabled') {
+        this.ctx.drawImage(bombAssets.disabled, e.tileX * TILE_SIZE, e.tileY * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+      }
+    }
+  }
+
+  // ── Landmine ───────────────────────────────────────────────────────────────
+
+  private drawLandmines(assets: Assets, mgr: LandmineManager): void {
+    for (const e of mgr.getEntities()) {
+      if (e.phase === 'armed') {
+        this.ctx.drawImage(assets.landmine, e.tileX * TILE_SIZE, e.tileY * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+      } else if (e.phase === 'exploding') {
+        const frame = assets.tnt.explosion[mgr.explosionFrame(e)];
+        for (const [col, row] of e.cells) {
+          this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+        }
+      }
+    }
+  }
+
+  // ── Grenade ────────────────────────────────────────────────────────────────
+
+  private drawGrenades(assets: Assets, mgr: GrenadeManager): void {
+    for (const e of mgr.getEntities()) {
+      if (e.phase === 'flying') {
+        this.ctx.drawImage(assets.grenade, e.tileX * TILE_SIZE, e.tileY * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+      } else if (e.phase === 'exploding') {
+        const frame = assets.tnt.explosion[mgr.explosionFrame(e)];
+        for (const [col, row] of e.cells) {
+          this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+        }
+      }
     }
   }
 
