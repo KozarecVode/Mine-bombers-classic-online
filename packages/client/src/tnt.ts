@@ -114,53 +114,19 @@ export class TntManager {
   }
 
   private applyExplosion(e: TntEntity, terrain: Terrain): void {
-    e.cells = this.computeTntCells(e.tileX, e.tileY, terrain);
-    for (const [col, row] of e.cells) {
-      const isBorder = row === 0 || row === terrain.length - 1
-                    || col === 0 || col === terrain[0].length - 1;
-      if (!isBorder && terrain[row]?.[col]) terrain[row][col] = false;
-    }
-  }
-
-  /**
-   * BFS flood-fill through TNT_PATTERN from the bomb's origin.
-   * Walls stop the flood from spreading further but are included as the
-   * last cell in that path (so soft blocks get destroyed).
-   * Border tiles are never included.
-   */
-  private computeTntCells(tileX: number, tileY: number, terrain: Terrain): [number, number][] {
     const rows = terrain.length, cols = terrain[0].length;
-    const patternSet = new Set(TNT_PATTERN.map(([dx, dy]) => `${dx},${dy}`));
-
-    const visited = new Set<string>();
-    const result: [number, number][] = [];
-    const queue: [number, number][] = [[0, 0]];
-    visited.add('0,0');
-
-    while (queue.length > 0) {
-      const [dx, dy] = queue.shift()!;
-      const col = tileX + dx, row = tileY + dy;
+    const visual: [number, number][] = [];
+    for (const [dx, dy] of TNT_PATTERN) {
+      const col = e.tileX + dx, row = e.tileY + dy;
       if (row < 0 || row >= rows || col < 0 || col >= cols) continue;
-
-      const isBorder = row === 0 || row === rows - 1 || col === 0 || col === cols - 1;
-      const isWall = isStone(terrain, col, row);
-      if (isBorder && isWall) continue; // permanent border — skip entirely
-
-      result.push([col, row]);
-
-      if (!isWall) {
-        for (const [ndx, ndy] of [[dx+1,dy],[dx-1,dy],[dx,dy+1],[dx,dy-1]] as [number,number][]) {
-          const key = `${ndx},${ndy}`;
-          if (!visited.has(key) && patternSet.has(key)) {
-            visited.add(key);
-            queue.push([ndx, ndy]);
-          }
-        }
+      if (row === 0 || row === rows - 1 || col === 0 || col === cols - 1) continue;
+      if (isStone(terrain, col, row)) {
+        terrain[row][col] = false; // destroy wall, no sprite
+      } else {
+        visual.push([col, row]);
       }
-      // wall tile: include it (destroy soft block) but don't spread beyond
     }
-
-    return result;
+    e.cells = visual;
   }
 
   /** Returns the current fuse sprite frame index (0-2) for a fusing TNT. */
@@ -183,6 +149,7 @@ export class TntManager {
       (e.phase === 'fusing' || e.phase === 'disabled') && !e.grace && e.tileX === col && e.tileY === row,
     );
   }
+
 
   /**
    * Try to push the TNT at (col, row) by (dcol, drow).
@@ -221,6 +188,15 @@ export class TntManager {
         e.phase = 'exploding';
         e.tick = 0;
         this.applyExplosion(e, terrain);
+      }
+    }
+  }
+
+  extinguishAt(col: number, row: number): void {
+    for (const e of this.entities) {
+      if (e.phase === 'fusing' && e.tileX === col && e.tileY === row) {
+        e.phase = 'disabled';
+        e.tick = 0;
       }
     }
   }

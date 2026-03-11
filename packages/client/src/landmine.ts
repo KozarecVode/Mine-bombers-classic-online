@@ -26,7 +26,6 @@ const HB     = 12;
 
 // ── Manager ──────────────────────────────────────────────────────────────────
 
-const PATTERN_SET = new Set(SMALL_BOMB_PATTERN.map(([dx, dy]) => `${dx},${dy}`));
 
 export class LandmineManager {
   private entities: LandmineEntity[] = [];
@@ -67,39 +66,19 @@ export class LandmineManager {
   private triggerExplosion(e: LandmineEntity, terrain: Terrain): void {
     e.phase = 'exploding';
     e.tick = 0;
-    e.cells = this.computeCells(e.tileX, e.tileY, terrain);
-    for (const [col, row] of e.cells) {
-      const isBorder = row === 0 || row === terrain.length - 1 || col === 0 || col === terrain[0].length - 1;
-      if (!isBorder && terrain[row]?.[col]) terrain[row][col] = false;
-    }
-  }
-
-  private computeCells(tileX: number, tileY: number, terrain: Terrain): [number, number][] {
     const rows = terrain.length, cols = terrain[0].length;
-    const visited = new Set<string>();
-    const result: [number, number][] = [];
-    const queue: [number, number][] = [[0, 0]];
-    visited.add('0,0');
-
-    while (queue.length > 0) {
-      const [dx, dy] = queue.shift()!;
-      const col = tileX + dx, row = tileY + dy;
+    const visual: [number, number][] = [];
+    for (const [dx, dy] of SMALL_BOMB_PATTERN) {
+      const col = e.tileX + dx, row = e.tileY + dy;
       if (row < 0 || row >= rows || col < 0 || col >= cols) continue;
-      const isBorder = row === 0 || row === rows - 1 || col === 0 || col === cols - 1;
-      const isWall = isStone(terrain, col, row);
-      if (isBorder && isWall) continue;
-      result.push([col, row]);
-      if (!isWall) {
-        for (const [ndx, ndy] of [[dx+1,dy],[dx-1,dy],[dx,dy+1],[dx,dy-1]] as [number,number][]) {
-          const key = `${ndx},${ndy}`;
-          if (!visited.has(key) && PATTERN_SET.has(key)) {
-            visited.add(key);
-            queue.push([ndx, ndy]);
-          }
-        }
+      if (row === 0 || row === rows - 1 || col === 0 || col === cols - 1) continue;
+      if (isStone(terrain, col, row)) {
+        terrain[row][col] = false; // destroy wall, no sprite
+      } else {
+        visual.push([col, row]);
       }
     }
-    return result;
+    e.cells = visual;
   }
 
   getFireCells(): Set<string> {
@@ -120,9 +99,9 @@ export class LandmineManager {
     }
   }
 
-  /** Landmines are flush with the ground — don't block player or weapon movement. */
-  hasSolidAt(_col: number, _row: number): boolean {
-    return false;
+  /** Blocks grenades (and other projectiles) but not the player. */
+  hasSolidAt(col: number, row: number): boolean {
+    return this.entities.some(e => e.phase === 'armed' && e.tileX === col && e.tileY === row);
   }
 
   explosionFrame(e: LandmineEntity): number {

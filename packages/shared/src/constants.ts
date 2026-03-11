@@ -1,6 +1,6 @@
 export const TILE_SIZE = 10; // matches ground.png / wall.png tile size
-export const MAP_WIDTH  = 80; // 80 × 12 = 960px canvas width
-export const MAP_HEIGHT = 60; // 60 × 12 = 720px canvas height
+export const MAP_WIDTH  = 64; // 64 × 10 = 640px canvas width
+export const MAP_HEIGHT = 45; // 45 × 10 = 450px canvas height
 
 export const HUD_HEIGHT = 56;
 

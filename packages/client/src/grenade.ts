@@ -18,7 +18,7 @@ export interface GrenadeEntity {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const TRAVEL_TICKS_PER_TILE = 1;
+const TILES_PER_TICK = 1.5;
 const EXPLODE_FRAME_COUNT = 11;
 const EXPLODE_TICKS_PER_FRAME = 2;
 const CHAIN_FRAME_CUTOFF = 6;
@@ -62,15 +62,17 @@ export class GrenadeManager {
   update(terrain: Terrain, solidCheckers: SolidChecker[] = []): void {
     for (const e of this.entities) {
       e.tick++;
-      if (e.phase === "flying" && e.tick % TRAVEL_TICKS_PER_TILE === 0) {
+      if (e.phase === "flying") {
         const [dc, dr] = dirDelta(e.dir);
-        const nc = e.tileX + dc,
-          nr = e.tileY + dr;
-        if (isStone(terrain, nc, nr) || solidCheckers.some((s) => s.hasSolidAt(nc, nr))) {
-          this.triggerExplosion(e, terrain);
-        } else {
-          e.tileX = nc;
-          e.tileY = nr;
+        for (let i = 0; i < TILES_PER_TICK && e.phase === "flying"; i++) {
+          const nc = e.tileX + dc,
+            nr = e.tileY + dr;
+          if (isStone(terrain, nc, nr) || solidCheckers.some((s) => s.hasSolidAt(nc, nr))) {
+            this.triggerExplosion(e, terrain);
+          } else {
+            e.tileX = nc;
+            e.tileY = nr;
+          }
         }
       } else if (e.phase === "exploding" && e.tick >= EXPLODE_TICKS_PER_FRAME * EXPLODE_FRAME_COUNT) {
         e.phase = "done";
@@ -83,10 +85,15 @@ export class GrenadeManager {
   private triggerExplosion(e: GrenadeEntity, terrain: Terrain): void {
     e.phase = "exploding";
     e.tick = 0;
-    e.cells = this.computeCells(e.tileX, e.tileY, terrain);
-    for (const [col, row] of e.cells) {
-      if (terrain[row]?.[col]) terrain[row][col] = false;
+    const visual: [number, number][] = [];
+    for (const [col, row] of this.computeCells(e.tileX, e.tileY, terrain)) {
+      if (isStone(terrain, col, row)) {
+        terrain[row][col] = false; // destroy wall, no sprite
+      } else {
+        visual.push([col, row]);
+      }
     }
+    e.cells = visual;
   }
 
   private computeCells(tileX: number, tileY: number, terrain: Terrain): [number, number][] {

@@ -3,37 +3,51 @@ import { Terrain, isStone } from './terrain.js';
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
-export type BigCrossPhase = 'fusing' | 'exploding' | 'done';
+export type FlameBombPhase = 'fusing' | 'disabled' | 'exploding' | 'done';
 
-export interface BigCrossEntity {
+export interface FlameBombEntity {
   id: number;
   tileX: number;
   tileY: number;
-  phase: BigCrossPhase;
+  phase: FlameBombPhase;
   tick: number;
   grace: boolean;
-  cells: [number, number][]; // explosion cells, computed at trigger time
+  cells: [number, number][];
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const FUSE_TICKS_PER_FRAME    = 20;
-const EXPLODE_FRAME_COUNT     = 11;
+const FUSE_TICKS            = 60 * 4; // 4 seconds at 60 fps
+const FUSE_FRAME_TICKS      = 4;      // swap fuse sprite every 4 ticks
+const EXPLODE_FRAME_COUNT   = 11;
 const EXPLODE_TICKS_PER_FRAME = 2;
-const CHAIN_FRAME_CUTOFF      = 6;
+const CHAIN_FRAME_CUTOFF    = 6;
+
+// ── Pattern ───────────────────────────────────────────────────────────────────
+//
+//  Diamond: centre row is 15 tiles wide, each row up/down shrinks by 2.
+//  7 rows above and 7 rows below the centre.
+//
+//  dy=0:  width 15 (dx -7..+7)
+//  dy=±1: width 13 (dx -6..+6)
+//  ...
+//  dy=±7: width  1 (dx  0.. 0)
+
+const FLAME_BOMB_PATTERN: [number, number][] = [];
+for (let dy = -7; dy <= 7; dy++) {
+  const halfWidth = 7 - Math.abs(dy);
+  for (let dx = -halfWidth; dx <= halfWidth; dx++) {
+    FLAME_BOMB_PATTERN.push([dx, dy]);
+  }
+}
 
 // ── Manager ──────────────────────────────────────────────────────────────────
 
-export class BigCrossManager {
-  private entities: BigCrossEntity[] = [];
+export class FlameBombManager {
+  private entities: FlameBombEntity[] = [];
   private nextId = 0;
   private static readonly MARGIN = 1;
   private static readonly HB     = 12;
-  private readonly maxRange: number;
-
-  constructor(maxRange = Infinity) {
-    this.maxRange = maxRange;
-  }
 
   place(
     playerX: number,
@@ -51,14 +65,11 @@ export class BigCrossManager {
     const tileY = playerTileY + dr;
     if (isStone(terrain, tileX, tileY)) return;
     if (this.entities.some(e => e.tileX === tileX && e.tileY === tileY)) return;
-    this.entities.push({
-      id: this.nextId++, tileX, tileY,
-      phase: 'fusing', tick: 0, grace: true, cells: [],
-    });
+    this.entities.push({ id: this.nextId++, tileX, tileY, phase: 'fusing', tick: 0, grace: true, cells: [] });
   }
 
   update(playerX: number, playerY: number, terrain: Terrain): void {
-    const { MARGIN, HB } = BigCrossManager;
+    const { MARGIN, HB } = FlameBombManager;
     const pl = playerX + MARGIN, pr = playerX + MARGIN + HB;
     const pt = playerY + MARGIN, pb = playerY + MARGIN + HB;
 
@@ -69,7 +80,7 @@ export class BigCrossManager {
         const overlaps = pl < tx + TILE_SIZE && pr > tx && pt < ty + TILE_SIZE && pb > ty;
         if (!overlaps) e.grace = false;
       }
-      if (e.phase === 'fusing' && e.tick >= FUSE_TICKS_PER_FRAME * 3) {
+      if (e.phase === 'fusing' && e.tick >= FUSE_TICKS) {
         this.triggerExplosion(e, terrain);
       } else if (e.phase === 'exploding' && e.tick >= EXPLODE_TICKS_PER_FRAME * EXPLODE_FRAME_COUNT) {
         e.phase = 'done';
@@ -80,16 +91,22 @@ export class BigCrossManager {
     this.entities = this.entities.filter(e => e.phase !== 'done');
   }
 
-  /** Trigger any fusing entities whose tile appears in the given fire-cell set. */
   chainDetonate(cells: Set<string>, terrain: Terrain): void {
     for (const e of this.entities) {
-      if (e.phase === 'fusing' && cells.has(`${e.tileX},${e.tileY}`)) {
+      if ((e.phase === 'fusing' || e.phase === 'disabled') && cells.has(`${e.tileX},${e.tileY}`)) {
         this.triggerExplosion(e, terrain);
       }
     }
   }
 
-  /** Returns the set of currently active (fire-phase) explosion tile keys. */
+  extinguishAt(col: number, row: number): void {
+    for (const e of this.entities) {
+      if (e.phase === 'fusing' && e.tileX === col && e.tileY === row) {
+        e.phase = 'disabled';
+      }
+    }
+  }
+
   getFireCells(): Set<string> {
     const cells = new Set<string>();
     for (const e of this.entities) {
@@ -100,14 +117,17 @@ export class BigCrossManager {
     return cells;
   }
 
-  private triggerExplosion(e: BigCrossEntity, terrain: Terrain): void {
+  private triggerExplosion(e: FlameBombEntity, terrain: Terrain): void {
     e.phase = 'exploding';
     e.tick = 0;
-    const allCells = this.computeCells(e.tileX, e.tileY, terrain);
+    const rows = terrain.length, cols = terrain[0].length;
     const visual: [number, number][] = [];
-    for (const [col, row] of allCells) {
+    for (const [dx, dy] of FLAME_BOMB_PATTERN) {
+      const col = e.tileX + dx, row = e.tileY + dy;
+      if (row < 0 || row >= rows || col < 0 || col >= cols) continue;
+      if (row === 0 || row === rows - 1 || col === 0 || col === cols - 1) continue;
       if (isStone(terrain, col, row)) {
-        terrain[row][col] = false; // destroy wall, no sprite
+        terrain[row][col] = false;
       } else {
         visual.push([col, row]);
       }
@@ -115,41 +135,24 @@ export class BigCrossManager {
     e.cells = visual;
   }
 
-  /** Compute all cells in the cross arms, passing through walls (border stops the arm). */
-  private computeCells(tileX: number, tileY: number, terrain: Terrain): [number, number][] {
-    const rows = terrain.length, cols = terrain[0].length;
-    const cells: [number, number][] = [[tileX, tileY]];
-    for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as [number, number][]) {
-      let c = tileX + dc, r = tileY + dr;
-      let steps = 0;
-      while (r >= 0 && r < rows && c >= 0 && c < cols && steps < this.maxRange) {
-        const isBorder = r === 0 || r === rows - 1 || c === 0 || c === cols - 1;
-        if (isBorder) break;
-        cells.push([c, r]);
-        c += dc; r += dr;
-        steps++;
-      }
-    }
-    return cells;
+  fuseFrame(e: FlameBombEntity): number {
+    return Math.floor(e.tick / FUSE_FRAME_TICKS) % 2;
   }
 
-  fuseFrame(_e: BigCrossEntity): number {
-    return 0; // single fuse sprite
-  }
-
-  explosionFrame(e: BigCrossEntity): number {
+  explosionFrame(e: FlameBombEntity): number {
     return Math.min(Math.floor(e.tick / EXPLODE_TICKS_PER_FRAME), EXPLODE_FRAME_COUNT - 1);
   }
 
   hasSolidAt(col: number, row: number): boolean {
     return this.entities.some(e =>
-      e.phase === 'fusing' && !e.grace && e.tileX === col && e.tileY === row,
+      (e.phase === 'fusing' || e.phase === 'disabled') && !e.grace && e.tileX === col && e.tileY === row,
     );
   }
 
+
   tryPush(col: number, row: number, dcol: number, drow: number, terrain: Terrain): boolean {
     const e = this.entities.find(e =>
-      e.phase === 'fusing' && e.tileX === col && e.tileY === row,
+      (e.phase === 'fusing' || e.phase === 'disabled') && e.tileX === col && e.tileY === row,
     );
     if (!e) return true;
     const nc = col + dcol, nr = row + drow;
@@ -160,5 +163,5 @@ export class BigCrossManager {
     return true;
   }
 
-  getEntities(): BigCrossEntity[] { return this.entities; }
+  getEntities(): FlameBombEntity[] { return this.entities; }
 }

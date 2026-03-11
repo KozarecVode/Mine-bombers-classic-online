@@ -32,6 +32,17 @@ export interface Assets {
     disabled:  HTMLCanvasElement;
     explosion: HTMLCanvasElement[];
   };
+  flamebomb: {
+    fuse:      HTMLCanvasElement[]; // [flame_bomb_1, flame_bomb_2] — loops
+    disabled:  HTMLCanvasElement;
+    explosion: HTMLCanvasElement[];
+  };
+  smalldetonate: { placed: HTMLCanvasElement; explosion: HTMLCanvasElement[] };
+  bigdetonate:   { placed: HTMLCanvasElement; explosion: HTMLCanvasElement[] };
+  urethane: { placed: HTMLCanvasElement; burning: HTMLCanvasElement };
+  plastic:  { placed: HTMLCanvasElement; armed: HTMLCanvasElement; explosion: HTMLCanvasElement[] };
+  nuclear:       { fuse: HTMLCanvasElement[]; explosion: HTMLCanvasElement[] };
+  jumpingbomb:   HTMLCanvasElement;
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {
@@ -44,6 +55,13 @@ function loadImage(src: string): Promise<HTMLImageElement> {
 }
 
 /** Remove the background color (sampled from top-left pixel) from a sprite. */
+function toCanvas(img: HTMLImageElement): HTMLCanvasElement {
+  const c = document.createElement('canvas');
+  c.width = img.width; c.height = img.height;
+  c.getContext('2d')!.drawImage(img, 0, 0);
+  return c;
+}
+
 function removeBg(img: HTMLImageElement): HTMLCanvasElement {
   const c = document.createElement('canvas');
   c.width  = img.width;
@@ -136,6 +154,15 @@ async function loadSmallBombAssets(explosion: HTMLCanvasElement[]): Promise<Asse
   return { fuse: [s1, s2, s3].map(removeBg), disabled: removeBg(disabled), explosion };
 }
 
+async function loadFlameBombAssets(explosion: HTMLCanvasElement[]): Promise<Assets['flamebomb']> {
+  const [f1, f2, fd] = await Promise.all([
+    loadImage('/art/texture/weapons/flame_bomb/flame_bomb_1.png'),
+    loadImage('/art/texture/weapons/flame_bomb/flame_bomb_2.png'),
+    loadImage('/art/texture/weapons/flame_bomb/flame_bomb_disabled.png'),
+  ]);
+  return { fuse: [f1, f2].map(removeBg), disabled: removeBg(fd), explosion };
+}
+
 async function loadBigBombAssets(explosion: HTMLCanvasElement[]): Promise<Assets['bigbomb']> {
   const [b1, b2, b3, disabled] = await Promise.all([
     loadImage('/art/texture/weapons/big_bomb/big_bomb_1.png'),
@@ -168,7 +195,7 @@ export async function loadAssets(): Promise<Assets> {
     loadFrames('right', 'mb_mans_r_',    4),
     loadExplosionFrames(),
   ]);
-  const [tnt, bigcross, smallcross, grenadeImg, smallbomb, bigbomb, landmineImg] = await Promise.all([
+  const [tnt, bigcross, smallcross, grenadeImg, smallbomb, bigbomb, landmineImg, flamebomb, sdImg, bdImg, u1Img, u2Img, p1Img, p2Img, n1Img, n2Img, n3Img, jbImg] = await Promise.all([
     loadTntAssets(explosion),
     loadBigCrossAssets(explosion),
     loadSmallCrossAssets(explosion),
@@ -176,8 +203,25 @@ export async function loadAssets(): Promise<Assets> {
     loadSmallBombAssets(explosion),
     loadBigBombAssets(explosion),
     loadImage('/art/texture/weapons/landmine/landmine.png'),
+    loadFlameBombAssets(explosion),
+    loadImage('/art/texture/weapons/small_detonate_blue/small_detonate_1.png'),
+    loadImage('/art/texture/weapons/big_detonate_blue/big_detonate_1.png'),
+    loadImage('/art/texture/weapons/urethane/urethane_1.png'),
+    loadImage('/art/texture/weapons/urethane/urethane_2.png'),
+    loadImage('/art/texture/weapons/plastic/plastic_1.png'),
+    loadImage('/art/texture/weapons/plastic/plastic_2.png'),
+    loadImage('/art/texture/weapons/nuclear_bomb/nuclear_bomb_1.png'),
+    loadImage('/art/texture/weapons/nuclear_bomb/nuclear_bomb_2.png'),
+    loadImage('/art/texture/weapons/nuclear_bomb/nuclear_bomb_3.png'),
+    loadImage('/art/texture/weapons/jumping_bomb/jumping_bomb_1.png'),
   ]);
-  const grenade  = removeBg(grenadeImg);
-  const landmine = removeBg(landmineImg);
-  return { ground, wall, walk: { up, down, left, right }, tnt, bigcross, smallcross, grenade, smallbomb, bigbomb, landmine };
+  const grenade       = removeBg(grenadeImg);
+  const landmine      = removeBg(landmineImg);
+  const smalldetonate = { placed: removeBg(sdImg), explosion };
+  const bigdetonate   = { placed: removeBg(bdImg), explosion };
+  const urethane      = { placed: removeBg(u1Img), burning: removeBg(u2Img) };
+  const plastic       = { placed: removeBg(p1Img), armed: toCanvas(p2Img), explosion };
+  const nuclear       = { fuse: [n1Img, n2Img, n3Img].map(removeBg), explosion };
+  const jumpingbomb   = removeBg(jbImg);
+  return { ground, wall, walk: { up, down, left, right }, tnt, bigcross, smallcross, grenade, smallbomb, bigbomb, landmine, flamebomb, smalldetonate, bigdetonate, urethane, plastic, nuclear, jumpingbomb };
 }

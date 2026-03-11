@@ -134,7 +134,9 @@ function startMove(
   }
   for (const w of weapons) {
     if (w.hasSolidAt(nc, nr)) {
-      if (!w.tryPush(nc, nr, dcol, drow, terrain)) {
+      // Check push destination against ALL managers, not just the one being pushed
+      const destBlocked = weapons.some(other => other.hasSolidAt(nc + dcol, nr + drow));
+      if (destBlocked || !w.tryPush(nc, nr, dcol, drow, terrain)) {
         player.moving = false;
         return;
       }

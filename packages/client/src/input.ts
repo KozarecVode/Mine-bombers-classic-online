@@ -7,6 +7,8 @@ export class InputManager {
   private _bigCrossPressed = false;
   private _weaponSwitchPressed = false;
   private _stopPressed = false;
+  private _fireExtPressed = false;
+  private _detonatePressed = false;
 
   constructor() {
     window.addEventListener('keydown', (e) => {
@@ -29,6 +31,13 @@ export class InputManager {
       if (e.code === 'KeyS') {
         this._stopPressed = true;
       }
+      if (e.code === 'KeyA') {
+        this._fireExtPressed = true;
+      }
+      if (e.code === 'PageDown') {
+        e.preventDefault();
+        this._detonatePressed = true;
+      }
     });
     window.addEventListener('keyup', (e) => {
       this.keys.delete(e.code);
@@ -38,7 +47,7 @@ export class InputManager {
   getDirection(): Direction {
     if (this.keys.has('ArrowUp')    || this.keys.has('KeyW')) return 'up';
     if (this.keys.has('ArrowDown')  || this.keys.has('KeyX')) return 'down';
-    if (this.keys.has('ArrowLeft')  || this.keys.has('KeyA')) return 'left';
+    if (this.keys.has('ArrowLeft')) return 'left';
     if (this.keys.has('ArrowRight') || this.keys.has('KeyD')) return 'right';
     return 'none';
   }
@@ -75,6 +84,20 @@ export class InputManager {
   consumeStopPress(): boolean {
     const v = this._stopPressed;
     this._stopPressed = false;
+    return v;
+  }
+
+  /** Returns true once per A keypress (edge-triggered) */
+  consumeFireExtPress(): boolean {
+    const v = this._fireExtPressed;
+    this._fireExtPressed = false;
+    return v;
+  }
+
+  /** Returns true once per PageDown keypress (edge-triggered) */
+  consumeDetonatePress(): boolean {
+    const v = this._detonatePressed;
+    this._detonatePressed = false;
     return v;
   }
 }

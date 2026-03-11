@@ -7,8 +7,16 @@ import { BigCrossManager } from "./bigcross.js";
 import { GrenadeManager } from "./grenade.js";
 import { BombManager } from "./bomb.js";
 import { LandmineManager } from "./landmine.js";
+import { FlameBombManager } from "./flamebomb.js";
+import { FlamethrowerManager } from "./flamethrower.js";
+import { FireExtinguisherManager } from "./fireextinguisher.js";
+import { DetBombManager } from "./detbomb.js";
+import { UrethaneManager } from "./urethane.js";
+import { PlasticManager } from "./plastic.js";
+import { NuclearManager } from "./nuclear.js";
+import { JumpingBombManager } from "./jumpingbomb.js";
 
-const DISPLAY_SCALE = 2; // render everything at 2× — game logic stays at native tile size
+const DISPLAY_SCALE = 3; // render everything at 3× — game logic stays at native tile size
 
 // ── HUD palette ───────────────────────────────────────────────────────────────
 const HUD_BG = "#000000";
@@ -68,9 +76,21 @@ export class Renderer {
     return oc;
   }
 
-  render(assets: Assets, terrain: Terrain, players: LocalPlayer[], myPlayer: LocalPlayer, tnt: TntManager, bigCross: BigCrossManager, smallCross: BigCrossManager, grenade: GrenadeManager, smallBomb: BombManager, bigBomb: BombManager, landmine: LandmineManager): void {
-    this.drawHud(players, myPlayer);
+  render(assets: Assets, terrain: Terrain, players: LocalPlayer[], myPlayer: LocalPlayer, tnt: TntManager, bigCross: BigCrossManager, smallCross: BigCrossManager, grenade: GrenadeManager, smallBomb: BombManager, bigBomb: BombManager, landmine: LandmineManager, flameBomb: FlameBombManager, flamethrower: FlamethrowerManager, fireExt: FireExtinguisherManager, smallDet: DetBombManager, bigDet: DetBombManager, urethane: UrethaneManager, plastic: PlasticManager, nuclear: NuclearManager, jumpingBomb: JumpingBombManager, selectedWeapon: string): void {
+    const shake = nuclear.getShakeIntensity();
+    if (shake > 0) {
+      const MAX_SHAKE = 3;
+      this.ctx.save();
+      this.ctx.translate(
+        (Math.random() * 2 - 1) * MAX_SHAKE * shake,
+        (Math.random() * 2 - 1) * MAX_SHAKE * shake,
+      );
+    }
+    this.drawHud(players, myPlayer, selectedWeapon);
     this.drawTerrain(terrain);
+    // Placed phase first — other weapons draw on top
+    this.drawUrethane(assets, urethane, 'placed');
+    this.drawPlastic(assets, plastic, 'placed');
     this.drawTnt(assets, tnt);
     this.drawCross(assets.bigcross, bigCross);
     this.drawCross(assets.smallcross, smallCross);
@@ -78,12 +98,24 @@ export class Renderer {
     this.drawBomb(assets.smallbomb, smallBomb);
     this.drawBomb(assets.bigbomb, bigBomb);
     this.drawLandmines(assets, landmine);
+    this.drawFlameBomb(assets, flameBomb);
+    this.drawFlamethrower(assets, flamethrower);
+    this.drawFireExtinguisher(assets, fireExt);
+    this.drawDetBomb(assets.smalldetonate, smallDet);
+    this.drawDetBomb(assets.bigdetonate, bigDet);
+    this.drawNuclear(assets, nuclear);
+    this.drawJumpingBomb(assets, jumpingBomb);
+    // Burning/armed phase on top — covers other items beneath
+    this.drawUrethane(assets, urethane, 'burning');
+    this.drawPlastic(assets, plastic, 'active');
     for (const p of players) this.drawPlayer(assets, p);
+    if (shake > 0) this.ctx.restore();
+    this.drawNuclearFlash(nuclear);
   }
 
   // ── HUD ────────────────────────────────────────────────────────────────────
 
-  private drawHud(players: LocalPlayer[], myPlayer: LocalPlayer): void {
+  private drawHud(players: LocalPlayer[], myPlayer: LocalPlayer, selectedWeapon: string): void {
     const { ctx } = this;
     ctx.fillStyle = HUD_BG;
     ctx.fillRect(0, 0, this.totalW, HUD_HEIGHT);
@@ -91,11 +123,11 @@ export class Renderer {
     ctx.fillRect(0, HUD_HEIGHT - 2, this.totalW, 2);
 
     players.forEach((p, i) => {
-      this.drawPlayerPanel(p, i * 248 + 6, 4, p === myPlayer);
+      this.drawPlayerPanel(p, i * 248 + 6, 4, p === myPlayer, p === myPlayer ? selectedWeapon : null);
     });
   }
 
-  private drawPlayerPanel(p: LocalPlayer, x: number, y: number, isMe: boolean): void {
+  private drawPlayerPanel(p: LocalPlayer, x: number, y: number, isMe: boolean, selectedWeapon: string | null = null): void {
     const { ctx } = this;
 
     ctx.fillStyle = HUD_PANEL;
@@ -110,6 +142,15 @@ export class Renderer {
     ctx.textAlign = "left";
     ctx.textBaseline = "top";
     ctx.fillText(p.name.slice(0, 9), x + 8, y + 4);
+
+    // Selected weapon (right-aligned, same row as name)
+    if (selectedWeapon) {
+      ctx.fillStyle = "#ffcc00";
+      ctx.font = "8px monospace";
+      ctx.textAlign = "right";
+      ctx.fillText(selectedWeapon, x + 228, y + 5);
+      ctx.textAlign = "left";
+    }
 
     // Bomb count
     ctx.fillStyle = "#888";
@@ -239,6 +280,153 @@ export class Renderer {
       } else if (e.phase === 'exploding') {
         const frame = assets.tnt.explosion[mgr.explosionFrame(e)];
         for (const [col, row] of e.cells) {
+          this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+        }
+      }
+    }
+  }
+
+  // ── Flame Bomb ─────────────────────────────────────────────────────────────
+
+  private drawFlameBomb(assets: Assets, mgr: FlameBombManager): void {
+    for (const e of mgr.getEntities()) {
+      if (e.phase === 'fusing') {
+        const sprite = assets.flamebomb.fuse[mgr.fuseFrame(e)];
+        this.ctx.drawImage(sprite, e.tileX * TILE_SIZE, e.tileY * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+      } else if (e.phase === 'disabled') {
+        this.ctx.drawImage(assets.flamebomb.disabled, e.tileX * TILE_SIZE, e.tileY * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+      } else if (e.phase === 'exploding') {
+        const frame = assets.tnt.explosion[mgr.explosionFrame(e)];
+        for (const [col, row] of e.cells) {
+          this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+        }
+      }
+    }
+  }
+
+  // ── Flamethrower ───────────────────────────────────────────────────────────
+
+  private drawFlamethrower(assets: Assets, mgr: FlamethrowerManager): void {
+    for (const e of mgr.getEntities()) {
+      const frame = assets.tnt.explosion[mgr.explosionFrame(e)];
+      for (const [col, row] of e.cells) {
+        this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+      }
+    }
+  }
+
+  // ── Urethane ───────────────────────────────────────────────────────────────
+
+  private drawUrethane(assets: Assets, mgr: UrethaneManager, layer: 'placed' | 'burning'): void {
+    if (layer === 'placed') {
+      for (const e of mgr.getEntities()) {
+        if (e.phase === 'placed') {
+          this.ctx.drawImage(assets.urethane.placed, e.centerX * TILE_SIZE, e.centerY * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+        }
+      }
+    } else {
+      for (const e of mgr.getEntities()) {
+        if (e.phase === 'burning') {
+          for (const [col, row] of e.cells) {
+            this.ctx.drawImage(assets.urethane.burning, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+          }
+        }
+      }
+      for (const f of mgr.getFires()) {
+        const frame = assets.flamebomb.explosion[mgr.fireFrame(f)];
+        this.ctx.drawImage(frame, f.col * TILE_SIZE, f.row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+      }
+    }
+  }
+
+  // ── Det Bomb ───────────────────────────────────────────────────────────────
+
+  private drawDetBomb(bombAssets: { placed: HTMLCanvasElement; explosion: HTMLCanvasElement[] }, mgr: DetBombManager): void {
+    for (const e of mgr.getEntities()) {
+      if (e.phase === 'placed') {
+        this.ctx.drawImage(bombAssets.placed, e.tileX * TILE_SIZE, e.tileY * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+      } else if (e.phase === 'exploding') {
+        const frame = bombAssets.explosion[mgr.explosionFrame(e)];
+        for (const [col, row] of e.cells) {
+          this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+        }
+      }
+    }
+  }
+
+  // ── Fire Extinguisher ──────────────────────────────────────────────────────
+
+  private drawFireExtinguisher(assets: Assets, mgr: FireExtinguisherManager): void {
+    for (const e of mgr.getEntities()) {
+      const frame = assets.tnt.explosion[mgr.smokeFrame(e)];
+      for (const [col, row] of e.cells) {
+        this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+      }
+    }
+  }
+
+  // ── Plastic ────────────────────────────────────────────────────────────────
+
+  private drawPlastic(assets: Assets, mgr: PlasticManager, layer: 'placed' | 'active'): void {
+    if (layer === 'placed') {
+      for (const e of mgr.getEntities()) {
+        if (e.phase === 'placed') {
+          this.ctx.drawImage(assets.plastic.placed, e.centerX * TILE_SIZE, e.centerY * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+        }
+      }
+    } else {
+      for (const e of mgr.getEntities()) {
+        if (e.phase === 'armed') {
+          for (const [col, row] of e.armedCells) {
+            this.ctx.drawImage(assets.plastic.armed, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+          }
+        } else if (e.phase === 'exploding') {
+          const frame = assets.plastic.explosion[mgr.explosionFrame(e)];
+          for (const [col, row] of e.explosionCells) {
+            this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+          }
+        }
+      }
+    }
+  }
+
+  // ── Nuclear ────────────────────────────────────────────────────────────────
+
+  private drawNuclear(assets: Assets, mgr: NuclearManager): void {
+    for (const e of mgr.getEntities()) {
+      if (e.phase === 'fusing') {
+        const frame = assets.nuclear.fuse[mgr.fuseFrame(e)];
+        this.ctx.drawImage(frame, e.centerX * TILE_SIZE, e.centerY * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+      } else if (e.phase === 'exploding') {
+        const frame = assets.nuclear.explosion[mgr.explosionFrame(e)];
+        for (const [col, row] of e.cells) {
+          this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+        }
+      }
+    }
+  }
+
+  private drawNuclearFlash(mgr: NuclearManager): void {
+    const intensity = mgr.getFlashIntensity();
+    if (intensity <= 0) return;
+    this.ctx.globalAlpha = intensity;
+    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillRect(0, 0, this.totalW, this.totalH);
+    this.ctx.globalAlpha = 1;
+  }
+
+  // ── Jumping Bomb ───────────────────────────────────────────────────────────
+
+  private drawJumpingBomb(assets: Assets, mgr: JumpingBombManager): void {
+    for (const e of mgr.getEntities()) {
+      // Draw bomb sprite at current position (unless exhausted)
+      if (!e.done) {
+        this.ctx.drawImage(assets.jumpingbomb, e.tileX * TILE_SIZE, e.tileY * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+      }
+      // Draw all active explosion visuals
+      for (const ex of e.explosions) {
+        const frame = assets.tnt.explosion[mgr.explosionFrame(ex)];
+        for (const [col, row] of ex.cells) {
           this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
         }
       }
