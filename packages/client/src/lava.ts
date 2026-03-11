@@ -16,6 +16,7 @@ export interface LavaEntity {
   cellList: [number, number][];
   pending: PendingCell[];
   pendingKeys: Set<string>;
+  blockedNeighbors: Set<string>; // adjacent tiles that were blocked; re-checked each tick
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -51,6 +52,7 @@ export class LavaManager {
       cellList: [[cx, cy]],
       pending: [],
       pendingKeys: new Set(),
+      blockedNeighbors: new Set(),
     };
     this.scheduleNeighbors(e, cx, cy, terrain, () => false);
     this.entities.push(e);
@@ -62,9 +64,13 @@ export class LavaManager {
       const nc = col + dc, nr = row + dr;
       if (nc <= 0 || nc >= cols - 1 || nr <= 0 || nr >= rows - 1) continue;
       if (isStone(terrain, nc, nr)) continue;
-      if (isBlocked(nc, nr)) continue;
       const key = `${nc},${nr}`;
       if (e.cells.has(key) || e.pendingKeys.has(key)) continue;
+      if (isBlocked(nc, nr)) {
+        e.blockedNeighbors.add(key);
+        continue;
+      }
+      e.blockedNeighbors.delete(key);
       e.pendingKeys.add(key);
       e.pending.push({ col: nc, row: nr, activateAt: e.tick + rand(MIN_SPREAD, MAX_SPREAD) });
     }
@@ -88,6 +94,25 @@ export class LavaManager {
         }
       }
       e.pending = stillPending;
+
+      // Re-check tiles that were previously blocked — schedule them if now free
+      const nowUnblocked: string[] = [];
+      for (const key of e.blockedNeighbors) {
+        if (e.cells.has(key) || e.pendingKeys.has(key)) { nowUnblocked.push(key); continue; }
+        const [nc, nr] = key.split(',').map(Number);
+        if (isBlocked(nc, nr)) continue;
+        // Only schedule if still adjacent to an active lava cell
+        let hasLavaNeighbor = false;
+        for (const [dc, dr] of DIRS) {
+          if (e.cells.has(`${nc + dc},${nr + dr}`)) { hasLavaNeighbor = true; break; }
+        }
+        nowUnblocked.push(key);
+        if (hasLavaNeighbor) {
+          e.pendingKeys.add(key);
+          e.pending.push({ col: nc, row: nr, activateAt: e.tick + rand(MIN_SPREAD, MAX_SPREAD) });
+        }
+      }
+      for (const key of nowUnblocked) e.blockedNeighbors.delete(key);
     }
   }
 
