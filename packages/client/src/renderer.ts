@@ -15,6 +15,7 @@ import { UrethaneManager } from "./urethane.js";
 import { PlasticManager } from "./plastic.js";
 import { NuclearManager } from "./nuclear.js";
 import { JumpingBombManager } from "./jumpingbomb.js";
+import { LavaManager } from "./lava.js";
 
 const DISPLAY_SCALE = 3; // render everything at 3× — game logic stays at native tile size
 
@@ -76,7 +77,7 @@ export class Renderer {
     return oc;
   }
 
-  render(assets: Assets, terrain: Terrain, players: LocalPlayer[], myPlayer: LocalPlayer, tnt: TntManager, bigCross: BigCrossManager, smallCross: BigCrossManager, grenade: GrenadeManager, smallBomb: BombManager, bigBomb: BombManager, landmine: LandmineManager, flameBomb: FlameBombManager, flamethrower: FlamethrowerManager, fireExt: FireExtinguisherManager, smallDet: DetBombManager, bigDet: DetBombManager, urethane: UrethaneManager, plastic: PlasticManager, nuclear: NuclearManager, jumpingBomb: JumpingBombManager, selectedWeapon: string): void {
+  render(assets: Assets, terrain: Terrain, players: LocalPlayer[], myPlayer: LocalPlayer, tnt: TntManager, bigCross: BigCrossManager, smallCross: BigCrossManager, grenade: GrenadeManager, smallBomb: BombManager, bigBomb: BombManager, landmine: LandmineManager, flameBomb: FlameBombManager, flamethrower: FlamethrowerManager, fireExt: FireExtinguisherManager, smallDet: DetBombManager, bigDet: DetBombManager, urethane: UrethaneManager, plastic: PlasticManager, nuclear: NuclearManager, jumpingBomb: JumpingBombManager, lava: LavaManager, selectedWeapon: string): void {
     const shake = nuclear.getShakeIntensity();
     if (shake > 0) {
       const MAX_SHAKE = 3;
@@ -88,7 +89,8 @@ export class Renderer {
     }
     this.drawHud(players, myPlayer, selectedWeapon);
     this.drawTerrain(terrain);
-    // Placed phase first — other weapons draw on top
+    // Lava and placed phase first — other weapons draw on top
+    this.drawLava(assets, lava);
     this.drawUrethane(assets, urethane, 'placed');
     this.drawPlastic(assets, plastic, 'placed');
     this.drawTnt(assets, tnt);
@@ -413,6 +415,16 @@ export class Renderer {
     this.ctx.fillStyle = '#ffffff';
     this.ctx.fillRect(0, 0, this.totalW, this.totalH);
     this.ctx.globalAlpha = 1;
+  }
+
+  // ── Lava ───────────────────────────────────────────────────────────────────
+
+  private drawLava(assets: Assets, mgr: LavaManager): void {
+    for (const e of mgr.getEntities()) {
+      for (const [col, row] of e.cellList) {
+        this.ctx.drawImage(assets.lava, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+      }
+    }
   }
 
   // ── Jumping Bomb ───────────────────────────────────────────────────────────

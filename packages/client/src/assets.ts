@@ -43,6 +43,7 @@ export interface Assets {
   plastic:  { placed: HTMLCanvasElement; armed: HTMLCanvasElement; explosion: HTMLCanvasElement[] };
   nuclear:       { fuse: HTMLCanvasElement[]; explosion: HTMLCanvasElement[] };
   jumpingbomb:   HTMLCanvasElement;
+  lava:          HTMLCanvasElement;
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {
@@ -195,7 +196,7 @@ export async function loadAssets(): Promise<Assets> {
     loadFrames('right', 'mb_mans_r_',    4),
     loadExplosionFrames(),
   ]);
-  const [tnt, bigcross, smallcross, grenadeImg, smallbomb, bigbomb, landmineImg, flamebomb, sdImg, bdImg, u1Img, u2Img, p1Img, p2Img, n1Img, n2Img, n3Img, jbImg] = await Promise.all([
+  const [tnt, bigcross, smallcross, grenadeImg, smallbomb, bigbomb, landmineImg, flamebomb, sdImg, bdImg, u1Img, u2Img, p1Img, p2Img, n1Img, n2Img, n3Img, jbImg, lavaImg] = await Promise.all([
     loadTntAssets(explosion),
     loadBigCrossAssets(explosion),
     loadSmallCrossAssets(explosion),
@@ -214,6 +215,7 @@ export async function loadAssets(): Promise<Assets> {
     loadImage('/art/texture/weapons/nuclear_bomb/nuclear_bomb_2.png'),
     loadImage('/art/texture/weapons/nuclear_bomb/nuclear_bomb_3.png'),
     loadImage('/art/texture/weapons/jumping_bomb/jumping_bomb_1.png'),
+    loadImage('/art/texture/weapons/lava/lava_1.png'),
   ]);
   const grenade       = removeBg(grenadeImg);
   const landmine      = removeBg(landmineImg);
@@ -223,5 +225,6 @@ export async function loadAssets(): Promise<Assets> {
   const plastic       = { placed: removeBg(p1Img), armed: toCanvas(p2Img), explosion };
   const nuclear       = { fuse: [n1Img, n2Img, n3Img].map(removeBg), explosion };
   const jumpingbomb   = removeBg(jbImg);
-  return { ground, wall, walk: { up, down, left, right }, tnt, bigcross, smallcross, grenade, smallbomb, bigbomb, landmine, flamebomb, smalldetonate, bigdetonate, urethane, plastic, nuclear, jumpingbomb };
+  const lava          = removeBg(lavaImg);
+  return { ground, wall, walk: { up, down, left, right }, tnt, bigcross, smallcross, grenade, smallbomb, bigbomb, landmine, flamebomb, smalldetonate, bigdetonate, urethane, plastic, nuclear, jumpingbomb, lava };
 }
