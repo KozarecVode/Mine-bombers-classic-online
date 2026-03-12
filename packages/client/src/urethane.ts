@@ -50,7 +50,7 @@ export class UrethaneManager {
   private fires: UrethaneFire[] = [];
   private nextId = 0;
 
-  place(playerX: number, playerY: number, terrain: Terrain): void {
+  place(playerX: number, playerY: number, terrain: Terrain, blocked?: (col: number, row: number) => boolean): void {
     const tileX = Math.round(playerX / TILE_SIZE);
     const tileY = Math.round(playerY / TILE_SIZE);
     const rows = terrain.length, cols = terrain[0].length;
@@ -61,9 +61,14 @@ export class UrethaneManager {
       if (row < 0 || row >= rows || col < 0 || col >= cols) continue;
       if (row === 0 || row === rows - 1 || col === 0 || col === cols - 1) continue;
       if (isStone(terrain, col, row)) continue;
+      if (blocked?.(col, row)) continue;
       cells.push([col, row]);
     }
     this.entities.push({ id: this.nextId++, phase: "placed", tick: 0, centerX: tileX, centerY: tileY, cells });
+  }
+
+  hasCellAt(col: number, row: number): boolean {
+    return this.entities.some(e => e.phase !== "done" && e.cells.some(([c, r]) => c === col && r === row));
   }
 
   private ignite(e: UrethaneEntity): void {

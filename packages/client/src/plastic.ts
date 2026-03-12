@@ -25,7 +25,7 @@ const CHAIN_FRAME_CUTOFF   = 6;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function buildDiamond(cx: number, cy: number, maxHalf: number, terrain: Terrain): [number, number][] {
+function buildDiamond(cx: number, cy: number, maxHalf: number, terrain: Terrain, blocked?: (col: number, row: number) => boolean): [number, number][] {
   const rows = terrain.length, cols = terrain[0].length;
   const result: [number, number][] = [];
   for (let dy = -maxHalf; dy <= maxHalf; dy++) {
@@ -35,6 +35,7 @@ function buildDiamond(cx: number, cy: number, maxHalf: number, terrain: Terrain)
       if (row < 0 || row >= rows || col < 0 || col >= cols) continue;
       if (row === 0 || row === rows - 1 || col === 0 || col === cols - 1) continue;
       if (isStone(terrain, col, row)) continue;
+      if (blocked?.(col, row)) continue;
       result.push([col, row]);
     }
   }
@@ -47,7 +48,7 @@ export class PlasticManager {
   private entities: PlasticEntity[] = [];
   private nextId = 0;
 
-  place(playerX: number, playerY: number, terrain: Terrain): void {
+  place(playerX: number, playerY: number, terrain: Terrain, blocked?: (col: number, row: number) => boolean): void {
     const cx = Math.round(playerX / TILE_SIZE);
     const cy = Math.round(playerY / TILE_SIZE);
     this.entities.push({
@@ -56,9 +57,13 @@ export class PlasticManager {
       tick: 0,
       centerX: cx,
       centerY: cy,
-      armedCells: buildDiamond(cx, cy, 8, terrain),
-      explosionCells: buildDiamond(cx, cy, 10, terrain),
+      armedCells: buildDiamond(cx, cy, 8, terrain, blocked),
+      explosionCells: buildDiamond(cx, cy, 10, terrain, blocked),
     });
+  }
+
+  hasCellAt(col: number, row: number): boolean {
+    return this.entities.some(e => e.phase !== "done" && e.armedCells.some(([c, r]) => c === col && r === row));
   }
 
   private arm(e: PlasticEntity): void { e.phase = "armed"; e.tick = 0; }

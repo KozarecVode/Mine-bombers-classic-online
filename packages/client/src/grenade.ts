@@ -63,6 +63,11 @@ export class GrenadeManager {
     for (const e of this.entities) {
       e.tick++;
       if (e.phase === "flying") {
+        // If the grenade was placed onto a solid tile (e.g. burning urethane), explode immediately
+        if (solidCheckers.some((s) => s.hasSolidAt(e.tileX, e.tileY))) {
+          this.triggerExplosion(e, terrain);
+          continue;
+        }
         const [dc, dr] = dirDelta(e.dir);
         for (let i = 0; i < TILES_PER_TICK && e.phase === "flying"; i++) {
           const nc = e.tileX + dc,
@@ -78,7 +83,6 @@ export class GrenadeManager {
         e.phase = "done";
       }
     }
-    this.chainDetonate(this.getFireCells(), terrain);
     this.entities = this.entities.filter((e) => e.phase !== "done");
   }
 
@@ -115,13 +119,7 @@ export class GrenadeManager {
     return cells;
   }
 
-  chainDetonate(cells: Set<string>, terrain: Terrain): void {
-    for (const e of this.entities) {
-      if (e.phase === "flying" && cells.has(`${e.tileX},${e.tileY}`)) {
-        this.triggerExplosion(e, terrain);
-      }
-    }
-  }
+  chainDetonate(cells: Set<string>, terrain: Terrain): void {}
 
   /** Grenades are flying — never a solid obstacle for players or other weapons. */
   hasSolidAt(_col: number, _row: number): boolean {

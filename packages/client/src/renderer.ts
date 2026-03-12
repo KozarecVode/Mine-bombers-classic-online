@@ -16,6 +16,17 @@ import { PlasticManager } from "./plastic.js";
 import { NuclearManager } from "./nuclear.js";
 import { JumpingBombManager } from "./jumpingbomb.js";
 import { LavaManager } from "./lava.js";
+import { WallManager } from "./wall.js";
+import { TeleportManager } from "./teleport.js";
+import { BarrelManager } from "./barrel.js";
+import { DiggerBombManager } from "./diggerbomb.js";
+import { BoulderManager } from "./boulder.js";
+import { SlimeManager } from "./slime.js";
+import { BrownManager } from "./brown.js";
+import { GrenadierManager } from "./grenadier.js";
+import { GreyManager } from "./grey.js";
+import { DoorManager } from "./door.js";
+import { DoorSwitchManager } from "./doorswitch.js";
 
 const DISPLAY_SCALE = 3; // render everything at 3× — game logic stays at native tile size
 
@@ -77,7 +88,7 @@ export class Renderer {
     return oc;
   }
 
-  render(assets: Assets, terrain: Terrain, players: LocalPlayer[], myPlayer: LocalPlayer, tnt: TntManager, bigCross: BigCrossManager, smallCross: BigCrossManager, grenade: GrenadeManager, smallBomb: BombManager, bigBomb: BombManager, landmine: LandmineManager, flameBomb: FlameBombManager, flamethrower: FlamethrowerManager, fireExt: FireExtinguisherManager, smallDet: DetBombManager, bigDet: DetBombManager, urethane: UrethaneManager, plastic: PlasticManager, nuclear: NuclearManager, jumpingBomb: JumpingBombManager, lava: LavaManager, selectedWeapon: string): void {
+  render(assets: Assets, terrain: Terrain, players: LocalPlayer[], myPlayer: LocalPlayer, tnt: TntManager, bigCross: BigCrossManager, smallCross: BigCrossManager, grenade: GrenadeManager, smallBomb: BombManager, bigBomb: BombManager, landmine: LandmineManager, flameBomb: FlameBombManager, flamethrower: FlamethrowerManager, fireExt: FireExtinguisherManager, smallDet: DetBombManager, bigDet: DetBombManager, urethane: UrethaneManager, plastic: PlasticManager, nuclear: NuclearManager, jumpingBomb: JumpingBombManager, lava: LavaManager, wall: WallManager, teleport: TeleportManager, barrel: BarrelManager, diggerBomb: DiggerBombManager, boulder: BoulderManager, slime: SlimeManager, brown: BrownManager, grenadier: GrenadierManager, grey: GreyManager, door: DoorManager, doorSwitch: DoorSwitchManager, selectedWeapon: string): void {
     const shake = nuclear.getShakeIntensity();
     if (shake > 0) {
       const MAX_SHAKE = 3;
@@ -89,8 +100,13 @@ export class Renderer {
     }
     this.drawHud(players, myPlayer, selectedWeapon);
     this.drawTerrain(terrain);
+    this.drawWalls(assets, wall);
+    this.drawBoulders(assets, boulder);
+    this.drawDoors(assets, door);
+    this.drawSwitches(assets, doorSwitch);
     // Lava and placed phase first — other weapons draw on top
     this.drawLava(assets, lava);
+    this.drawTeleports(assets, teleport);
     this.drawUrethane(assets, urethane, 'placed');
     this.drawPlastic(assets, plastic, 'placed');
     this.drawTnt(assets, tnt);
@@ -107,9 +123,22 @@ export class Renderer {
     this.drawDetBomb(assets.bigdetonate, bigDet);
     this.drawNuclear(assets, nuclear);
     this.drawJumpingBomb(assets, jumpingBomb);
+    this.drawBarrels(assets, barrel);
+    this.drawDiggerBombs(assets, diggerBomb);
+    // Dead monsters below burning/armed layer so urethane/plastic cover them
+    for (const s of slime.getEntities()) { if (s.phase === 'dead') this.drawSlime(assets, s); }
+    for (const b of brown.getEntities()) { if (b.phase === 'dead') this.drawBrown(assets, b); }
+    for (const g of grenadier.getEntities()) { if (g.phase === 'dead') this.drawGrenadier(assets, g); }
+    for (const g of grey.getEntities()) { if (g.phase === 'dead') this.drawGrey(assets, g); }
     // Burning/armed phase on top — covers other items beneath
     this.drawUrethane(assets, urethane, 'burning');
     this.drawPlastic(assets, plastic, 'active');
+    // Alive monsters on top of everything
+    for (const s of slime.getEntities()) { if (s.phase !== 'dead') this.drawSlime(assets, s); }
+    for (const b of brown.getEntities()) { if (b.phase !== 'dead') this.drawBrown(assets, b); }
+    for (const g of grenadier.getEntities()) { if (g.phase !== 'dead') this.drawGrenadier(assets, g); }
+    for (const g of grey.getEntities()) { if (g.phase !== 'dead') this.drawGrey(assets, g); }
+    this.drawGrenadierGrenades(assets, grenadier);
     for (const p of players) this.drawPlayer(assets, p);
     if (shake > 0) this.ctx.restore();
     this.drawNuclearFlash(nuclear);
@@ -188,6 +217,55 @@ export class Renderer {
       this.terrainCanvas = this.buildTerrainCanvas(terrain, this._assets);
     }
     this.ctx.drawImage(this.terrainCanvas!, 0, HUD_HEIGHT);
+  }
+
+  // ── Teleports ──────────────────────────────────────────────────────────────
+
+  private drawTeleports(assets: Assets, mgr: TeleportManager): void {
+    for (const e of mgr.getEntities()) {
+      if (e.phase === 'placed') {
+        this.ctx.drawImage(assets.teleport, e.col * TILE_SIZE, e.row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+      } else if (e.phase === 'exploding') {
+        const frame = assets.tnt.explosion[mgr.explosionFrame(e)];
+        for (const [col, row] of e.cells) {
+          this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+        }
+      }
+    }
+  }
+
+  // ── Boulders ───────────────────────────────────────────────────────────────
+
+  private drawBoulders(assets: Assets, mgr: BoulderManager): void {
+    for (const { tileX, tileY } of mgr.getEntities()) {
+      this.ctx.drawImage(assets.boulder, tileX * TILE_SIZE, tileY * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+    }
+  }
+
+  // ── Placed Walls ───────────────────────────────────────────────────────────
+
+  private drawWalls(assets: Assets, wall: WallManager): void {
+    for (const { col, row } of wall.getEntities()) {
+      this.ctx.drawImage(assets.wall, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+    }
+  }
+
+  // ── Doors ──────────────────────────────────────────────────────────────────
+
+  private drawDoors(assets: Assets, mgr: DoorManager): void {
+    if (mgr.isOpen()) return;
+    for (const { col, row } of mgr.getEntities()) {
+      this.ctx.drawImage(assets.door, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+    }
+  }
+
+  // ── Door Switches ──────────────────────────────────────────────────────────
+
+  private drawSwitches(assets: Assets, mgr: DoorSwitchManager): void {
+    const sprite = mgr.isOn() ? assets.doorswitch.on : assets.doorswitch.off;
+    for (const { col, row } of mgr.getEntities()) {
+      this.ctx.drawImage(sprite, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+    }
   }
 
   // ── TNT ────────────────────────────────────────────────────────────────────
@@ -427,6 +505,41 @@ export class Renderer {
     }
   }
 
+  // ── Barrel ─────────────────────────────────────────────────────────────────
+
+  private drawBarrels(assets: Assets, mgr: BarrelManager): void {
+    for (const e of mgr.getEntities()) {
+      if (e.phase === 'placed') {
+        this.ctx.drawImage(assets.barrel, e.tileX * TILE_SIZE, e.tileY * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+      } else if (e.phase === 'exploding') {
+        const frame = assets.tnt.explosion[mgr.explosionFrame(e)];
+        for (const [col, row] of e.centralCells) {
+          this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+        }
+        for (const s of e.secondaryBlasts) {
+          for (const [col, row] of s.cells) {
+            this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+          }
+        }
+      }
+    }
+  }
+
+  // ── Digger Bomb ────────────────────────────────────────────────────────────
+
+  private drawDiggerBombs(assets: Assets, mgr: DiggerBombManager): void {
+    for (const e of mgr.getEntities()) {
+      if (e.phase === 'fusing') {
+        this.ctx.drawImage(assets.diggerbomb, e.tileX * TILE_SIZE, e.tileY * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+      } else if (e.phase === 'exploding') {
+        const frame = assets.tnt.explosion[mgr.explosionFrame(e)];
+        for (const [col, row] of e.cells) {
+          this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+        }
+      }
+    }
+  }
+
   // ── Jumping Bomb ───────────────────────────────────────────────────────────
 
   private drawJumpingBomb(assets: Assets, mgr: JumpingBombManager): void {
@@ -439,6 +552,71 @@ export class Renderer {
       for (const ex of e.explosions) {
         const frame = assets.tnt.explosion[mgr.explosionFrame(ex)];
         for (const [col, row] of ex.cells) {
+          this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+        }
+      }
+    }
+  }
+
+  // ── Slime ──────────────────────────────────────────────────────────────────
+
+  private drawSlime(assets: Assets, s: import('./slime.js').SlimeEntity): void {
+    if (s.phase === 'dead') {
+      this.ctx.drawImage(assets.slime.dead, Math.round(s.x), Math.round(s.y) + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+      return;
+    }
+    const dir = s.dir === 'none' ? 'down' : s.dir;
+    const frames = assets.slime[dir];
+    const frame = s.moving ? frames[s.animFrame % frames.length] : frames[0];
+    this.ctx.drawImage(frame, Math.round(s.x), Math.round(s.y) + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+  }
+
+  // ── Brown ──────────────────────────────────────────────────────────────────
+
+  private drawBrown(assets: Assets, b: import('./brown.js').BrownEntity): void {
+    if (b.phase === 'dead') {
+      this.ctx.drawImage(assets.brown.dead, Math.round(b.x), Math.round(b.y) + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+      return;
+    }
+    const dir = b.dir === 'none' ? 'down' : b.dir;
+    const frames = assets.brown[dir];
+    const frame = b.moving ? frames[b.animFrame % frames.length] : frames[0];
+    this.ctx.drawImage(frame, Math.round(b.x), Math.round(b.y) + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+  }
+
+  // ── Grey ───────────────────────────────────────────────────────────────────
+
+  private drawGrey(assets: Assets, g: import('./grey.js').GreyEntity): void {
+    if (g.phase === 'dead') {
+      this.ctx.drawImage(assets.grey.dead, Math.round(g.x), Math.round(g.y) + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+      return;
+    }
+    const dir = g.dir === 'none' ? 'down' : g.dir;
+    const frames = assets.grey[dir];
+    const frame = g.moving ? frames[g.animFrame % frames.length] : frames[0];
+    this.ctx.drawImage(frame, Math.round(g.x), Math.round(g.y) + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+  }
+
+  // ── Grenadier ──────────────────────────────────────────────────────────────
+
+  private drawGrenadier(assets: Assets, g: import('./grenadier.js').GrenadierEntity): void {
+    if (g.phase === 'dead') {
+      this.ctx.drawImage(assets.grenadier.dead, Math.round(g.x), Math.round(g.y) + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+      return;
+    }
+    const dir = g.dir === 'none' ? 'down' : g.dir;
+    const frames = assets.grenadier[dir];
+    const frame = g.moving ? frames[g.animFrame % frames.length] : frames[0];
+    this.ctx.drawImage(frame, Math.round(g.x), Math.round(g.y) + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+  }
+
+  private drawGrenadierGrenades(assets: Assets, mgr: GrenadierManager): void {
+    for (const g of mgr.getGrenades()) {
+      if (g.phase === 'flying') {
+        this.ctx.drawImage(assets.grenade, g.tileX * TILE_SIZE, g.tileY * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+      } else if (g.phase === 'exploding') {
+        const frame = assets.tnt.explosion[mgr.explosionFrame(g)];
+        for (const [col, row] of g.cells) {
           this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
         }
       }

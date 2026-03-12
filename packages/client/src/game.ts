@@ -52,6 +52,7 @@ export function updatePlayer(
   stopPressed: boolean,
   terrain: Terrain,
   weapons: WeaponMgr[] = [],
+  speed: number = PLAYER_SPEED,
 ): void {
   if (stopPressed) player.pendingStop = true;
 
@@ -75,7 +76,7 @@ export function updatePlayer(
       const remX = targetX - player.x;
       const remY = targetY - player.y;
 
-      if (Math.abs(remX) <= PLAYER_SPEED && Math.abs(remY) <= PLAYER_SPEED) {
+      if (Math.abs(remX) <= speed && Math.abs(remY) <= speed) {
         // Reached target tile — snap to it
         player.x = targetX;
         player.y = targetY;
@@ -92,8 +93,8 @@ export function updatePlayer(
         }
       } else {
         // Advance toward target tile
-        if (remX !== 0) player.x += Math.sign(remX) * PLAYER_SPEED;
-        if (remY !== 0) player.y += Math.sign(remY) * PLAYER_SPEED;
+        if (remX !== 0) player.x += Math.sign(remX) * speed;
+        if (remY !== 0) player.y += Math.sign(remY) * speed;
       }
     }
   } else {

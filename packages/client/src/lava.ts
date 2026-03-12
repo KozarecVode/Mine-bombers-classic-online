@@ -128,6 +128,8 @@ export class LavaManager {
         }
         if (e.pendingKeys.has(key)) {
           e.pendingKeys.delete(key);
+          // Don't lose this candidate — re-check it once fire clears
+          e.blockedNeighbors.add(key);
         }
       }
 
@@ -145,7 +147,8 @@ export class LavaManager {
       // Re-schedule cleared tiles from any adjacent surviving lava cell
       for (const [cc, cr] of cleared) {
         const key = `${cc},${cr}`;
-        if (e.pendingKeys.has(key) || isStone(terrain, cc, cr) || isBlocked(cc, cr)) continue;
+        if (e.pendingKeys.has(key) || isStone(terrain, cc, cr)) continue;
+        if (isBlocked(cc, cr)) { e.blockedNeighbors.add(key); continue; }
         for (const [dc, dr] of DIRS) {
           if (e.cells.has(`${cc + dc},${cr + dr}`)) {
             e.pendingKeys.add(key);

@@ -44,6 +44,40 @@ export interface Assets {
   nuclear:       { fuse: HTMLCanvasElement[]; explosion: HTMLCanvasElement[] };
   jumpingbomb:   HTMLCanvasElement;
   lava:          HTMLCanvasElement;
+  teleport:      HTMLCanvasElement;
+  barrel:        HTMLCanvasElement;
+  diggerbomb:    HTMLCanvasElement;
+  boulder:       HTMLCanvasElement;
+  slime: {
+    up:    HTMLCanvasElement[];
+    down:  HTMLCanvasElement[];
+    left:  HTMLCanvasElement[];
+    right: HTMLCanvasElement[];
+    dead:  HTMLCanvasElement;
+  };
+  brown: {
+    up:    HTMLCanvasElement[];
+    down:  HTMLCanvasElement[];
+    left:  HTMLCanvasElement[];
+    right: HTMLCanvasElement[];
+    dead:  HTMLCanvasElement;
+  };
+  grenadier: {
+    up:    HTMLCanvasElement[];
+    down:  HTMLCanvasElement[];
+    left:  HTMLCanvasElement[];
+    right: HTMLCanvasElement[];
+    dead:  HTMLCanvasElement;
+  };
+  grey: {
+    up:    HTMLCanvasElement[];
+    down:  HTMLCanvasElement[];
+    left:  HTMLCanvasElement[];
+    right: HTMLCanvasElement[];
+    dead:  HTMLCanvasElement;
+  };
+  door:          HTMLImageElement;
+  doorswitch:    { off: HTMLCanvasElement; on: HTMLCanvasElement };
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {
@@ -186,8 +220,128 @@ async function loadSmallCrossAssets(explosion: HTMLCanvasElement[]): Promise<Ass
   return { fuse: [sprite, sprite, sprite], explosion };
 }
 
+async function loadGrenadierAssets(): Promise<Assets['grenadier']> {
+  const base = '/art/texture/monsters/grenadier';
+  const [r1, r2, r3, r4, l1, l2, l3, l4, u1, u2, u3, u4, d1, d2, d3, d4, deadImg] = await Promise.all([
+    loadImage(`${base}/right/tile_6_16.png`),
+    loadImage(`${base}/right/tile_6_17.png`),
+    loadImage(`${base}/right/tile_6_18.png`),
+    loadImage(`${base}/right/tile_6_19.png`),
+    loadImage(`${base}/left/tile_6_20.png`),
+    loadImage(`${base}/left/tile_6_21.png`),
+    loadImage(`${base}/left/tile_6_22.png`),
+    loadImage(`${base}/left/tile_6_23.png`),
+    loadImage(`${base}/up/tile_6_24.png`),
+    loadImage(`${base}/up/tile_6_25.png`),
+    loadImage(`${base}/up/tile_6_26.png`),
+    loadImage(`${base}/up/tile_6_27.png`),
+    loadImage(`${base}/down/tile_6_28.png`),
+    loadImage(`${base}/down/tile_6_29.png`),
+    loadImage(`${base}/down/tile_6_30.png`),
+    loadImage(`${base}/down/tile_6_31.png`),
+    loadImage('/art/texture/world/dead.png'),
+  ]);
+  return {
+    right: [r1, r2, r3, r4].map(removeBg),
+    left:  [l1, l2, l3, l4].map(removeBg),
+    up:    [u1, u2, u3, u4].map(removeBg),
+    down:  [d1, d2, d3, d4].map(removeBg),
+    dead:  removeBg(deadImg),
+  };
+}
+
+async function loadBrownAssets(): Promise<Assets['brown']> {
+  const base = '/art/texture/monsters/brown';
+  const [r1, r2, r3, r4, l1, l2, l3, l4, u1, u2, u3, u4, d1, d2, d3, d4, deadImg] = await Promise.all([
+    loadImage(`${base}/right/tile_5_16.png`),
+    loadImage(`${base}/right/tile_5_17.png`),
+    loadImage(`${base}/right/tile_5_18.png`),
+    loadImage(`${base}/right/tile_5_19.png`),
+    loadImage(`${base}/left/tile_5_20.png`),
+    loadImage(`${base}/left/tile_5_21.png`),
+    loadImage(`${base}/left/tile_5_22.png`),
+    loadImage(`${base}/left/tile_5_23.png`),
+    loadImage(`${base}/up/tile_5_24.png`),
+    loadImage(`${base}/up/tile_5_25.png`),
+    loadImage(`${base}/up/tile_5_26.png`),
+    loadImage(`${base}/up/tile_5_27.png`),
+    loadImage(`${base}/down/tile_5_28.png`),
+    loadImage(`${base}/down/tile_5_29.png`),
+    loadImage(`${base}/down/tile_5_30.png`),
+    loadImage(`${base}/down/tile_5_31.png`),
+    loadImage('/art/texture/world/dead.png'),
+  ]);
+  return {
+    right: [r1, r2, r3, r4].map(removeBg),
+    left:  [l1, l2, l3, l4].map(removeBg),
+    up:    [u1, u2, u3, u4].map(removeBg),
+    down:  [d1, d2, d3, d4].map(removeBg),
+    dead:  removeBg(deadImg),
+  };
+}
+
+async function loadSlimeAssets(): Promise<Assets['slime']> {
+  const base = '/art/texture/monsters/slime';
+  const [r1, r2, r3, r4, l1, l2, l3, l4, u1, u2, u3, u4, d1, d2, d3, d4, deadImg] = await Promise.all([
+    loadImage(`${base}/right/slime_1.png`),
+    loadImage(`${base}/right/slime_2.png`),
+    loadImage(`${base}/right/slime_3.png`),
+    loadImage(`${base}/right/slime_4.png`),
+    loadImage(`${base}/left/tile_7_20.png`),
+    loadImage(`${base}/left/tile_7_21.png`),
+    loadImage(`${base}/left/tile_7_22.png`),
+    loadImage(`${base}/left/tile_7_23.png`),
+    loadImage(`${base}/up/tile_7_24.png`),
+    loadImage(`${base}/up/tile_7_25.png`),
+    loadImage(`${base}/up/tile_7_26.png`),
+    loadImage(`${base}/up/tile_7_27.png`),
+    loadImage(`${base}/down/tile_7_28.png`),
+    loadImage(`${base}/down/tile_7_29.png`),
+    loadImage(`${base}/down/tile_7_30.png`),
+    loadImage(`${base}/down/tile_7_31.png`),
+    loadImage(`${base}/dead.png`),
+  ]);
+  return {
+    right: [r1, r2, r3, r4].map(removeBg),
+    left:  [l1, l2, l3, l4].map(removeBg),
+    up:    [u1, u2, u3, u4].map(removeBg),
+    down:  [d1, d2, d3, d4].map(removeBg),
+    dead:  removeBg(deadImg),
+  };
+}
+
+async function loadGreyAssets(): Promise<Assets['grey']> {
+  const base = '/art/texture/monsters/grey';
+  const [r1, r2, r3, r4, l1, l2, l3, l4, u1, u2, u3, u4, d1, d2, d3, d4, deadImg] = await Promise.all([
+    loadImage(`${base}/right/tile_8_0.png`),
+    loadImage(`${base}/right/tile_8_1.png`),
+    loadImage(`${base}/right/tile_8_2.png`),
+    loadImage(`${base}/right/tile_8_3.png`),
+    loadImage(`${base}/left/tile_8_4.png`),
+    loadImage(`${base}/left/tile_8_5.png`),
+    loadImage(`${base}/left/tile_8_6.png`),
+    loadImage(`${base}/left/tile_8_7.png`),
+    loadImage(`${base}/up/tile_8_8.png`),
+    loadImage(`${base}/up/tile_8_9.png`),
+    loadImage(`${base}/up/tile_8_10.png`),
+    loadImage(`${base}/up/tile_8_11.png`),
+    loadImage(`${base}/down/tile_8_12.png`),
+    loadImage(`${base}/down/tile_8_13.png`),
+    loadImage(`${base}/down/tile_8_14.png`),
+    loadImage(`${base}/down/tile_8_15.png`),
+    loadImage('/art/texture/world/dead.png'),
+  ]);
+  return {
+    right: [r1, r2, r3, r4].map(removeBg),
+    left:  [l1, l2, l3, l4].map(removeBg),
+    up:    [u1, u2, u3, u4].map(removeBg),
+    down:  [d1, d2, d3, d4].map(removeBg),
+    dead:  removeBg(deadImg),
+  };
+}
+
 export async function loadAssets(): Promise<Assets> {
-  const [ground, wall, up, down, left, right, explosion] = await Promise.all([
+  const [ground, wall, up, down, left, right, explosion, slime, brown, grenadier, grey] = await Promise.all([
     loadImage('/art/texture/world/ground.png'),
     loadImage('/art/texture/world/wall.png'),
     loadFrames('top',   'mb_mans_top_',  4),
@@ -195,8 +349,12 @@ export async function loadAssets(): Promise<Assets> {
     loadFrames('left',  'mb_mans_l_',    4),
     loadFrames('right', 'mb_mans_r_',    4),
     loadExplosionFrames(),
+    loadSlimeAssets(),
+    loadBrownAssets(),
+    loadGrenadierAssets(),
+    loadGreyAssets(),
   ]);
-  const [tnt, bigcross, smallcross, grenadeImg, smallbomb, bigbomb, landmineImg, flamebomb, sdImg, bdImg, u1Img, u2Img, p1Img, p2Img, n1Img, n2Img, n3Img, jbImg, lavaImg] = await Promise.all([
+  const [tnt, bigcross, smallcross, grenadeImg, smallbomb, bigbomb, landmineImg, flamebomb, sdImg, bdImg, u1Img, u2Img, p1Img, p2Img, n1Img, n2Img, n3Img, jbImg, lavaImg, teleportImg, barrelImg, diggerImg, boulderImg, door, swOffImg, swOnImg] = await Promise.all([
     loadTntAssets(explosion),
     loadBigCrossAssets(explosion),
     loadSmallCrossAssets(explosion),
@@ -216,6 +374,13 @@ export async function loadAssets(): Promise<Assets> {
     loadImage('/art/texture/weapons/nuclear_bomb/nuclear_bomb_3.png'),
     loadImage('/art/texture/weapons/jumping_bomb/jumping_bomb_1.png'),
     loadImage('/art/texture/weapons/lava/lava_1.png'),
+    loadImage('/art/texture/weapons/teleport/teleport_1.png'),
+    loadImage('/art/texture/weapons/barrel/barrel_1.png'),
+    loadImage('/art/texture/weapons/digger_bomb/digger_bomb_1.png'),
+    loadImage('/art/texture/world/boulder.png'),
+    loadImage('/art/texture/world/door.png'),
+    loadImage('/art/texture/world/switch_off.png'),
+    loadImage('/art/texture/world/switch_on.png'),
   ]);
   const grenade       = removeBg(grenadeImg);
   const landmine      = removeBg(landmineImg);
@@ -226,5 +391,10 @@ export async function loadAssets(): Promise<Assets> {
   const nuclear       = { fuse: [n1Img, n2Img, n3Img].map(removeBg), explosion };
   const jumpingbomb   = removeBg(jbImg);
   const lava          = removeBg(lavaImg);
-  return { ground, wall, walk: { up, down, left, right }, tnt, bigcross, smallcross, grenade, smallbomb, bigbomb, landmine, flamebomb, smalldetonate, bigdetonate, urethane, plastic, nuclear, jumpingbomb, lava };
+  const teleport      = removeBg(teleportImg);
+  const barrel        = removeBg(barrelImg);
+  const diggerbomb    = removeBg(diggerImg);
+  const boulder       = removeBg(boulderImg);
+  const doorswitch    = { off: toCanvas(swOffImg), on: toCanvas(swOnImg) };
+  return { ground, wall, walk: { up, down, left, right }, tnt, bigcross, smallcross, grenade, smallbomb, bigbomb, landmine, flamebomb, smalldetonate, bigdetonate, urethane, plastic, nuclear, jumpingbomb, lava, teleport, barrel, diggerbomb, boulder, slime, brown, grenadier, grey, door, doorswitch };
 }
