@@ -59,23 +59,48 @@ function buildCells(
 ): [number, number][] {
   const rows = terrain.length, cols = terrain[0].length;
   const d = dir === 'none' ? 'down' : dir;
-  const visual: [number, number][] = [];
 
+  // Build the cone zone: all world positions reachable by the pattern
+  const zoneSet = new Set<string>();
   for (const [f, s] of BASE_PATTERN) {
     const fo = f + fOffset;
     let dx: number, dy: number;
     if      (d === 'up')    { dx =  s; dy = -fo; }
     else if (d === 'down')  { dx =  s; dy =  fo; }
     else if (d === 'left')  { dx = -fo; dy =  s; }
-    else                    { dx =  fo; dy =  s; } // right
-
+    else                    { dx =  fo; dy =  s; }
     const col = tileX + dx, row = tileY + dy;
-    if (row < 0 || row >= rows || col < 0 || col >= cols) continue;
-    if (row === 0 || row === rows - 1 || col === 0 || col === cols - 1) continue;
-    if (isStone(terrain, col, row)) {
-      terrain[row][col] = false; // destroy wall, no sprite
-    } else {
-      visual.push([col, row]);
+    if (row > 0 && row < rows - 1 && col > 0 && col < cols - 1)
+      zoneSet.add(`${col},${row}`);
+  }
+
+  // BFS flood-fill from the player outward through the zone.
+  // The player tile + any bridge tiles (fOffset gap) are virtual sources so
+  // the BFS can enter the zone correctly when fOffset > 0.
+  const visited = new Set<string>();
+  const queue: [number, number][] = [];
+  let fwDx = 0, fwDy = 0;
+  if      (d === 'up')    fwDy = -1;
+  else if (d === 'down')  fwDy =  1;
+  else if (d === 'left')  fwDx = -1;
+  else                    fwDx =  1;
+  for (let i = 0; i <= fOffset; i++) {
+    const bc = tileX + fwDx * i, br = tileY + fwDy * i;
+    const bk = `${bc},${br}`;
+    if (!visited.has(bk)) { visited.add(bk); queue.push([bc, br]); }
+  }
+
+  const visual: [number, number][] = [];
+  while (queue.length > 0) {
+    const [c, r] = queue.shift()!;
+    for (const [nc, nr] of [[c+1,r],[c-1,r],[c,r+1],[c,r-1]] as [number,number][]) {
+      const key = `${nc},${nr}`;
+      if (visited.has(key)) continue;
+      visited.add(key);
+      if (!zoneSet.has(key)) continue;   // outside cone — don't enter or expand
+      if (isStone(terrain, nc, nr)) continue; // blocked — can't enter, stops here
+      visual.push([nc, nr]);
+      queue.push([nc, nr]);
     }
   }
   return visual;

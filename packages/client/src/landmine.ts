@@ -19,7 +19,7 @@ export interface LandmineEntity {
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const EXPLODE_FRAME_COUNT     = 11;
-const EXPLODE_TICKS_PER_FRAME = 2;
+const EXPLODE_TICKS_PER_FRAME = 1;
 const CHAIN_FRAME_CUTOFF      = 6;
 const MARGIN = 1;
 const HB     = 12;
@@ -72,11 +72,7 @@ export class LandmineManager {
       const col = e.tileX + dx, row = e.tileY + dy;
       if (row < 0 || row >= rows || col < 0 || col >= cols) continue;
       if (row === 0 || row === rows - 1 || col === 0 || col === cols - 1) continue;
-      if (isStone(terrain, col, row)) {
-        terrain[row][col] = false; // destroy wall, no sprite
-      } else {
-        visual.push([col, row]);
-      }
+      visual.push([col, row]);
     }
     e.cells = visual;
   }

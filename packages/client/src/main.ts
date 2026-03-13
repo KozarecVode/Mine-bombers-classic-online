@@ -1,8 +1,8 @@
-import { TILE_SIZE } from "@minebombers/shared";
+import { TILE_SIZE, MAP_WIDTH, MAP_HEIGHT } from "@minebombers/shared";
 import { InputManager } from "./input.js";
 import { Renderer } from "./renderer.js";
 import { createLocalPlayer, updatePlayer } from "./game.js";
-import { generateTerrain } from "./terrain.js";
+import { generateTerrain, generateDetailMap, applyDigDamage, applyExplosionToTerrain, setTerrainTile, isStone, isDiggable } from "./terrain.js";
 import { loadAssets, Assets } from "./assets.js";
 import { TntManager } from "./tnt.js";
 import { BigCrossManager } from "./bigcross.js";
@@ -30,16 +30,27 @@ import { GrenadierManager } from "./grenadier.js";
 import { GreyManager } from "./grey.js";
 import { DoorManager } from "./door.js";
 import { DoorSwitchManager } from "./doorswitch.js";
+import { TreasureManager, TreasureType } from "./treasure.js";
+import { PickableManager, PICKABLE_TYPES, PickableType } from "./pickable.js";
+import { parseMneLevel, buildThumbnail, LEVEL_NAMES, generateRandomLevel } from "./levelloader.js";
+import { CloneManager } from "./clone.js";
+import { MAX_HEALTH } from "./game.js";
 
 const lobbyEl = document.getElementById("lobby")!;
 const gameEl = document.getElementById("game")!;
 const statusEl = document.getElementById("status")!;
+const levelStatusEl = document.getElementById("levelStatus")!;
+const levelGridEl = document.getElementById("levelGrid")!;
 const nameInput = document.getElementById("nameInput") as HTMLInputElement;
 const joinBtn = document.getElementById("joinBtn") as HTMLButtonElement;
+
+const levelData = new Map<string, Uint8Array>();
+let selectedLevel: string | null = null;
 
 const input = new InputManager();
 const renderer = new Renderer();
 const terrain = generateTerrain();
+const detailMap = generateDetailMap(terrain);
 const player = createLocalPlayer("Player", 0);
 const tntMgr = new TntManager();
 const bigCrossMgr = new BigCrossManager();
@@ -70,6 +81,89 @@ const slimeMgr = new SlimeManager();
 const brownMgr = new BrownManager();
 const grenadierMgr = new GrenadierManager();
 const greyMgr = new GreyManager();
+const treasureMgr = new TreasureManager();
+const pickableMgr = new PickableManager();
+const cloneMgr = new CloneManager();
+
+function applyParsedLevel(parsed: ReturnType<typeof parseMneLevel>): void {
+  for (let r = 0; r < MAP_HEIGHT; r++)
+    for (let c = 0; c < MAP_WIDTH; c++) {
+      terrain[r][c]   = parsed.terrain[r][c];
+      detailMap[r][c] = parsed.detailMap[r][c];
+    }
+
+  player.x = parsed.spawnCol * TILE_SIZE;
+  player.y = parsed.spawnRow * TILE_SIZE;
+  player.tileX = parsed.spawnCol;
+  player.tileY = parsed.spawnRow;
+  player.targetTileX = parsed.spawnCol;
+  player.targetTileY = parsed.spawnRow;
+  player.moving = false;
+  player.digging = false;
+  prevTileX = parsed.spawnCol;
+  prevTileY = parsed.spawnRow;
+  activeFireCells = new Set();
+
+  for (const e of parsed.entities) {
+    const px = e.col * TILE_SIZE;
+    const py = e.row * TILE_SIZE;
+    switch (e.kind) {
+      case 'brown':      brownMgr.place(px, py, terrain);      break;
+      case 'grenadier':  grenadierMgr.place(px, py, terrain);  break;
+      case 'slime':      slimeMgr.place(px, py, terrain);      break;
+      case 'grey':       greyMgr.place(px, py, terrain);       break;
+      case 'boulder':    boulderMgr.place(px, py, terrain);    break;
+      case 'landmine':   landmineMgr.place(px, py, terrain);   break;
+      case 'door':       doorMgr.place(px, py, terrain);       break;
+      case 'doorswitch': doorSwitchMgr.place(px, py, terrain); break;
+      case 'lava':       lavaMgr.place(px, py, terrain);       break;
+      case 'barrel':     barrelMgr.place(px, py, terrain);     break;
+      case 'teleport':   teleportMgr.place(px, py, terrain);   break;
+      case 'urethane':   urethaneMgr.placeTile(Math.round(px / TILE_SIZE), Math.round(py / TILE_SIZE)); break;
+      case 'treasure':   treasureMgr.place(px, py, terrain, e.subtype as TreasureType); break;
+      case 'pickable':   pickableMgr.place(px, py, terrain, e.subtype as PickableType); break;
+    }
+  }
+
+  renderer.markTerrainDirty();
+}
+
+async function loadLevelThumbnails(): Promise<void> {
+  levelStatusEl.textContent = "loading levels…";
+
+  const results = await Promise.allSettled(
+    LEVEL_NAMES.map(async (name) => {
+      const resp = await fetch(`/levels/${name}.MNE`);
+      if (!resp.ok) throw new Error(`${name} not found`);
+      return { name, data: new Uint8Array(await resp.arrayBuffer()) };
+    }),
+  );
+
+  let loaded = 0;
+  for (const result of results) {
+    if (result.status !== "fulfilled") continue;
+    const { name, data } = result.value;
+    levelData.set(name, data);
+
+    const thumb = buildThumbnail(data);
+    const card = document.createElement("div");
+    card.className = "levelCard";
+    card.appendChild(thumb);
+    const label = document.createElement("span");
+    label.textContent = name;
+    card.appendChild(label);
+    card.addEventListener("click", () => {
+      levelGridEl.querySelectorAll(".levelCard").forEach((c) => c.classList.remove("selected"));
+      card.classList.add("selected");
+      selectedLevel = name;
+      levelStatusEl.textContent = name;
+    });
+    levelGridEl.appendChild(card);
+    loaded++;
+  }
+
+  levelStatusEl.textContent = loaded > 0 ? "select a level or play random" : "";
+}
 
 const WEAPONS = [
   "tnt",
@@ -101,6 +195,13 @@ const WEAPONS = [
   "brown",
   "grenadier",
   "grey",
+  "clone",
+  "treasure",
+  "dig_power_1",
+  "dig_power_2",
+  "dig_power_3",
+  "random_weapon",
+  "medpac",
 ] as const;
 type WeaponName = (typeof WEAPONS)[number];
 let selectedWeapon: WeaponName = "tnt";
@@ -121,8 +222,17 @@ loadAssets()
     statusEl.textContent = err.message;
   });
 
+loadLevelThumbnails().catch(() => {
+  levelStatusEl.textContent = "";
+});
+
 joinBtn.addEventListener("click", () => {
   player.name = nameInput.value.trim() || "Player";
+  if (selectedLevel && levelData.has(selectedLevel)) {
+    applyParsedLevel(parseMneLevel(levelData.get(selectedLevel)!));
+  } else {
+    applyParsedLevel(generateRandomLevel());
+  }
   lobbyEl.style.display = "none";
   gameEl.style.display = "flex";
   requestAnimationFrame(loop);
@@ -133,11 +243,14 @@ let last = 0;
 let prevTileX = player.tileX;
 let prevTileY = player.tileY;
 let needsResetBump = false;
+let activeFireCells = new Set<string>();
 
 function loop(ts: number): void {
   requestAnimationFrame(loop);
   if (ts - last < TARGET_MS) return;
-  last = ts;
+  last += TARGET_MS;
+  // Prevent runaway catch-up (e.g. after tab was hidden)
+  if (ts - last > TARGET_MS * 5) last = ts;
 
   // Reset switch bump debounce one frame after the player moved away,
   // so tryPush sees a clean state when they arrive at the adjacent tile.
@@ -150,9 +263,23 @@ function loop(ts: number): void {
   const tileY = player.tileY * TILE_SIZE;
   const facingDir = player.dir; // capture before updatePlayer can change it
 
+  // Pre-set digging flag so updatePlayer keeps animation ticking
+  const inputDir = input.getDirection();
+  if (!player.moving && inputDir !== 'none') {
+    const dc = inputDir === 'right' ? 1 : inputDir === 'left' ? -1 : 0;
+    const dr = inputDir === 'down'  ? 1 : inputDir === 'up'   ? -1 : 0;
+    const dnc = player.tileX + dc, dnr = player.tileY + dr;
+    player.digging = isStone(terrain, dnc, dnr)
+      || lavaMgr.hasSolidAt(dnc, dnr)
+      || urethaneMgr.hasSolidAt(dnc, dnr)
+      || plasticMgr.hasSolidAt(dnc, dnr);
+  } else {
+    player.digging = false;
+  }
+
   updatePlayer(
     player,
-    input.getDirection(),
+    inputDir,
     input.consumeStopPress(),
     terrain,
     [
@@ -175,6 +302,23 @@ function loop(ts: number): void {
     ],
     jetpackMgr.getSpeed(),
   );
+
+  // Clear digging if player started moving (tile became passable mid-dig)
+  if (player.moving) player.digging = false;
+
+  // Apply dig damage to whatever is blocking the player
+  if (player.digging) {
+    const dc = inputDir === 'right' ? 1 : inputDir === 'left' ? -1 : 0;
+    const dr = inputDir === 'down'  ? 1 : inputDir === 'up'   ? -1 : 0;
+    const nc = player.tileX + dc, nr = player.tileY + dr;
+    if (isStone(terrain, nc, nr)) {
+      if (applyDigDamage(detailMap, terrain, nc, nr, player.digPower)) renderer.markTerrainDirty();
+    } else {
+      lavaMgr.applyDigDamage(nc, nr, player.digPower);
+      urethaneMgr.applyDigDamage(nc, nr, player.digPower);
+      plasticMgr.applyDigDamage(nc, nr, player.digPower);
+    }
+  }
 
   // Only try teleport when the player steps onto a new tile (entry detection)
   const tileChanged = player.tileX !== prevTileX || player.tileY !== prevTileY;
@@ -238,6 +382,10 @@ function loop(ts: number): void {
     else if (selectedWeapon === "brown") brownMgr.place(player.x, player.y, terrain);
     else if (selectedWeapon === "grenadier") grenadierMgr.place(player.x, player.y, terrain);
     else if (selectedWeapon === "grey") greyMgr.place(player.x, player.y, terrain);
+    else if (selectedWeapon === "clone") cloneMgr.place(player.x, player.y, terrain);
+    else if (selectedWeapon === "treasure") treasureMgr.place(player.x, player.y, terrain);
+    else if (PICKABLE_TYPES.includes(selectedWeapon as typeof PICKABLE_TYPES[number]))
+      pickableMgr.place(player.x, player.y, terrain, selectedWeapon as typeof PICKABLE_TYPES[number]);
   }
   if (input.consumeFireExtPress()) {
     fireExtMgr.fire(player.x, player.y, facingDir, terrain, [tntMgr, smallBombMgr, bigBombMgr, flameBombMgr], player.moving);
@@ -246,16 +394,26 @@ function loop(ts: number): void {
     smallDetMgr.detonate(terrain);
     bigDetMgr.detonate(terrain);
   }
+  if (input.consumeTreasurePress()) {
+    treasureMgr.place(player.x, player.y, terrain);
+  }
 
   tntMgr.update(player.x, player.y, terrain);
-  bigCrossMgr.update(player.x, player.y, terrain);
-  smallCrossMgr.update(player.x, player.y, terrain);
+  // Cross bombs stop at: hard walls (border type or wall entity), closed doors, door switches.
+  // Diggable terrain (rock, sand, brick) lets the arm pass through and damages them.
+  const crossSolidAt = (c: number, r: number) =>
+    doorMgr.hasSolidAt(c, r) ||
+    doorSwitchMgr.hasSolidAt(c, r) ||
+    (isStone(terrain, c, r) && !isDiggable(detailMap[r]?.[c]?.type ?? 'ground'));
+  bigCrossMgr.update(player.x, player.y, terrain, crossSolidAt);
+  smallCrossMgr.update(player.x, player.y, terrain, crossSolidAt);
   const monsterSolid = {
     hasSolidAt: (c: number, r: number) =>
       slimeMgr.getEntities().some((s) => s.phase === "alive" && s.tileX === c && s.tileY === r) ||
       brownMgr.getEntities().some((b) => b.phase === "alive" && b.tileX === c && b.tileY === r) ||
       grenadierMgr.getEntities().some((g) => g.phase === "alive" && g.tileX === c && g.tileY === r) ||
-      greyMgr.getEntities().some((g) => g.phase === "alive" && g.tileX === c && g.tileY === r),
+      greyMgr.getEntities().some((g) => g.phase === "alive" && g.tileX === c && g.tileY === r) ||
+      cloneMgr.getEntities().some((e) => e.phase === "alive" && e.tileX === c && e.tileY === r),
   };
   grenadeMgr.update(terrain, [
     tntMgr,
@@ -272,6 +430,8 @@ function loop(ts: number): void {
     diggerBombMgr,
     doorMgr,
     boulderMgr,
+    lavaMgr,
+    treasureMgr,
     monsterSolid,
   ]);
   smallBombMgr.update(player.x, player.y, terrain);
@@ -300,7 +460,13 @@ function loop(ts: number): void {
     urethaneMgr.hasSolidAt(c, r) ||
     plasticMgr.hasSolidAt(c, r) ||
     nuclearMgr.hasSolidAt(c, r) ||
-    jumpingBombMgr.hasSolidAt(c, r);
+    jumpingBombMgr.hasSolidAt(c, r) ||
+    barrelMgr.hasSolidAt(c, r) ||
+    diggerBombMgr.hasSolidAt(c, r) ||
+    doorMgr.hasSolidAt(c, r) ||
+    doorSwitchMgr.hasSolidAt(c, r) ||
+    boulderMgr.hasSolidAt(c, r) ||
+    treasureMgr.hasSolidAt(c, r);
   lavaMgr.update(terrain, lavaBlocked);
   teleportMgr.update(terrain);
   barrelMgr.update(player.x, player.y, terrain);
@@ -326,28 +492,41 @@ function loop(ts: number): void {
     slimeMgr.getEntities().some((s) => s.phase === "alive" && s.tileX === c && s.tileY === r) ||
     brownMgr.getEntities().some((b) => b.phase === "alive" && b.tileX === c && b.tileY === r) ||
     grenadierMgr.getEntities().some((g) => g.phase === "alive" && g.tileX === c && g.tileY === r) ||
-    greyMgr.getEntities().some((g) => g.phase === "alive" && g.tileX === c && g.tileY === r);
-  slimeMgr.update(terrain, slimeSolidAt, player.tileX, player.tileY);
-  brownMgr.update(terrain, slimeSolidAt, player.tileX, player.tileY);
-  grenadierMgr.update(terrain, slimeSolidAt, player.tileX, player.tileY, [
-    tntMgr,
-    bigCrossMgr,
-    smallCrossMgr,
-    smallBombMgr,
-    bigBombMgr,
-    landmineMgr,
-    urethaneMgr,
-    plasticMgr,
-    nuclearMgr,
-    jumpingBombMgr,
-    barrelMgr,
-    diggerBombMgr,
-    doorMgr,
-    boulderMgr,
-    monsterSolid,
-  ]);
-  greyMgr.update(terrain, slimeSolidAt, player.tileX, player.tileY);
-  // Monsters trigger armed landmines they walk onto
+    greyMgr.getEntities().some((g) => g.phase === "alive" && g.tileX === c && g.tileY === r) ||
+    cloneMgr.getEntities().some((e) => e.phase === "alive" && e.tileX === c && e.tileY === r);
+  const monsterApplyDig = (col: number, row: number, digPower: number): void => {
+    if (applyDigDamage(detailMap, terrain, col, row, digPower)) renderer.markTerrainDirty();
+  };
+  slimeMgr.update(terrain, slimeSolidAt, player.tileX, player.tileY, monsterApplyDig);
+  for (const e of slimeMgr.getEntities()) if (e.phase === 'alive') treasureMgr.collectAt(e.tileX, e.tileY);
+  brownMgr.update(terrain, slimeSolidAt, player.tileX, player.tileY, monsterApplyDig);
+  for (const e of brownMgr.getEntities()) if (e.phase === 'alive') treasureMgr.collectAt(e.tileX, e.tileY);
+  grenadierMgr.update(terrain, slimeSolidAt, player.tileX, player.tileY, grenadeMgr, monsterApplyDig);
+  for (const e of grenadierMgr.getEntities()) if (e.phase === 'alive') treasureMgr.collectAt(e.tileX, e.tileY);
+  greyMgr.update(terrain, slimeSolidAt, player.tileX, player.tileY, monsterApplyDig);
+  for (const e of greyMgr.getEntities()) if (e.phase === 'alive') treasureMgr.collectAt(e.tileX, e.tileY);
+
+  // Teleport monsters that step on a teleport pad (60-frame cooldown prevents re-teleport)
+  const allMonsters = [
+    ...slimeMgr.getEntities(),
+    ...brownMgr.getEntities(),
+    ...grenadierMgr.getEntities(),
+    ...greyMgr.getEntities(),
+  ];
+  for (const m of allMonsters) {
+    if (m.phase !== 'alive') continue;
+    if (m.teleportCooldown > 0) { m.teleportCooldown--; continue; }
+    const dest = teleportMgr.tryTeleport(m.tileX, m.tileY);
+    if (dest) {
+      m.tileX = dest[0]; m.tileY = dest[1];
+      m.x = dest[0] * TILE_SIZE; m.y = dest[1] * TILE_SIZE;
+      m.targetTileX = dest[0]; m.targetTileY = dest[1];
+      m.moving = false;
+      m.teleportCooldown = 60;
+    }
+  }
+
+  // Monster tiles set (enemies only — clones are allies, not in this set)
   const monsterTiles = new Set([
     ...slimeMgr
       .getEntities()
@@ -366,11 +545,35 @@ function loop(ts: number): void {
       .filter((g) => g.phase === "alive")
       .map((g) => `${g.tileX},${g.tileY}`),
   ]);
+  cloneMgr.update(terrain, slimeSolidAt, monsterTiles, treasureMgr.getEntities(), grenadeMgr, player.digPower, monsterApplyDig);
+  // Clones collect treasure they walk onto
+  for (const e of cloneMgr.getEntities()) {
+    if (e.phase === "alive") e.cash += treasureMgr.collectAt(e.tileX, e.tileY);
+  }
   landmineMgr.chainDetonate(monsterTiles, terrain);
   jetpackMgr.update();
+  if (tileChanged) {
+    player.cash += treasureMgr.update(player.tileX, player.tileY);
+    pickableMgr.consumeByMonsters([
+      ...slimeMgr.getEntities().filter(e => e.phase === 'alive'),
+      ...brownMgr.getEntities().filter(e => e.phase === 'alive'),
+      ...grenadierMgr.getEntities().filter(e => e.phase === 'alive'),
+      ...greyMgr.getEntities().filter(e => e.phase === 'alive'),
+    ]);
+    for (const type of pickableMgr.update(player.tileX, player.tileY)) {
+      if (type === "dig_power_1") player.digPower += 1;
+      else if (type === "dig_power_2") player.digPower += 3;
+      else if (type === "dig_power_3") player.digPower += 5;
+      else if (type === "medpac") player.health = MAX_HEALTH;
+      else if (type === "random_weapon") selectedWeapon = WEAPONS[Math.floor(Math.random() * WEAPONS.length)];
+    }
+  }
 
   // Cross-chain: all weapon fire cells can trigger each other
   const grenadeFire = grenadeMgr.getFireCells();
+  const flamethrowerFire = flamethrowerMgr.getFireCells();
+  const flameBarrelFire = barrelMgr.getFireCells();
+  const nuclearFire = nuclearMgr.getFireCells();
   const allFire = new Set([
     ...tntMgr.getFireCells(),
     ...bigCrossMgr.getFireCells(),
@@ -380,28 +583,50 @@ function loop(ts: number): void {
     ...bigBombMgr.getFireCells(),
     ...landmineMgr.getFireCells(),
     ...flameBombMgr.getFireCells(),
-    ...flamethrowerMgr.getFireCells(),
+    ...flamethrowerFire,
     ...smallDetMgr.getFireCells(),
     ...bigDetMgr.getFireCells(),
     ...plasticMgr.getFireCells(),
-    ...nuclearMgr.getFireCells(),
+    ...nuclearFire,
     ...jumpingBombMgr.getFireCells(),
     ...teleportMgr.getFireCells(),
-    ...barrelMgr.getFireCells(),
+    ...flameBarrelFire,
     ...diggerBombMgr.getFireCells(),
-    ...grenadierMgr.getFireCells(),
   ]);
-  const flameFire = new Set([...flameBombMgr.getFireCells(), ...flamethrowerMgr.getFireCells()]);
+  const flameFire = new Set([...flameBombMgr.getFireCells(), ...flamethrowerFire]);
+  const noTreasureFire = new Set([...flameFire, ...flameBarrelFire]);
+  const explosionFire = new Set([...allFire].filter((k) => !noTreasureFire.has(k)));
+  treasureMgr.applyFire(explosionFire);
+  pickableMgr.applyFire(explosionFire);
+  // Only flamethrower has no terrain effect; barrel explosions do affect terrain
+  const noTerrainFire = new Set([...flamethrowerFire]);
+  // Nuclear fire converts everything to ground; other fire degrades one step
+  const nonNuclearTerrainFire = new Set([...allFire].filter(k => !noTerrainFire.has(k) && !nuclearFire.has(k)));
+  const nuclearTerrainFire = new Set([...nuclearFire].filter(k => !noTerrainFire.has(k)));
+  const newNormalCells = new Set([...nonNuclearTerrainFire].filter(k => !activeFireCells.has(k)));
+  const newNuclearCells = new Set([...nuclearTerrainFire].filter(k => !activeFireCells.has(k)));
+  if (applyExplosionToTerrain(newNormalCells, allFire, terrain, detailMap)) renderer.markTerrainDirty();
+  if (applyExplosionToTerrain(newNuclearCells, allFire, terrain, detailMap, true)) renderer.markTerrainDirty();
+  // Boulders hit by explosion fire become rock_destroyed_2 — must run AFTER applyExplosionToTerrain
+  // so the freshly-placed rock_destroyed_2 tile isn't immediately re-degraded to ground.
+  const destroyedBoulders = boulderMgr.applyFire(explosionFire);
+  for (const { col, row } of destroyedBoulders) {
+    const type = nuclearFire.has(`${col},${row}`) ? 'ground' : 'rock_destroyed_2';
+    setTerrainTile(detailMap, terrain, col, row, type);
+  }
+  if (destroyedBoulders.length > 0) renderer.markTerrainDirty();
+  activeFireCells = allFire;
   lavaMgr.applyFire(allFire, terrain, (c, r) => urethaneMgr.hasSolidAt(c, r) || plasticMgr.hasSolidAt(c, r));
   slimeMgr.applyFire(allFire);
   brownMgr.applyFire(allFire);
   grenadierMgr.applyFire(allFire);
   greyMgr.applyFire(allFire);
+  cloneMgr.applyFire(allFire);
   wallMgr.applyFire(allFire, terrain);
   urethaneMgr.spreadFireThrough(flameFire, allFire);
   tntMgr.chainDetonate(allFire, terrain);
-  bigCrossMgr.chainDetonate(allFire, terrain);
-  smallCrossMgr.chainDetonate(allFire, terrain);
+  bigCrossMgr.chainDetonate(allFire, terrain, crossSolidAt);
+  smallCrossMgr.chainDetonate(allFire, terrain, crossSolidAt);
   // Grenades don't chain-detonate from other grenade fire
   const allFireNoGrenade = new Set([...allFire].filter((k) => !grenadeFire.has(k)));
   grenadeMgr.chainDetonate(allFireNoGrenade, terrain);
@@ -424,6 +649,7 @@ function loop(ts: number): void {
   renderer.render(
     assets,
     terrain,
+    detailMap,
     [player],
     player,
     tntMgr,
@@ -452,8 +678,11 @@ function loop(ts: number): void {
     brownMgr,
     grenadierMgr,
     greyMgr,
+    cloneMgr,
     doorMgr,
     doorSwitchMgr,
+    treasureMgr,
+    pickableMgr,
     selectedWeapon,
   );
 }

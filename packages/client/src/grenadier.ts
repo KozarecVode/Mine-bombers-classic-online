@@ -1,19 +1,17 @@
 import { TILE_SIZE } from "@minebombers/shared";
 import { Terrain, isStone } from "./terrain.js";
 import { Dir } from "./game.js";
+import { GrenadeManager } from "./grenade.js";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const SPEED = 1.0;
 const ANIM_TICKS = 6;
-const TURN_CHANCE = 0.25;
-const LOS_RANGE = 15; // max tiles of line-of-sight
-const CHASE_RANGE = 12; // tiles — switch from patrol to chase
+const LOS_RANGE = 15;   // max tiles of line-of-sight
+const CHASE_RANGE = 10; // tiles — chase player within this distance
+const TURN_CHANCE = 0.1;
 const THROW_COOLDOWN = 90; // frames between throws (~1.5 s at 60 fps)
-const GRENADE_TPT = 1.5; // tiles per tick (same as player grenade)
-const EXPLODE_FRAMES = 11;
-const EXPLODE_TPF = 2;
-const CHAIN_CUTOFF = 6;
+const DIG_POWER = 12;
 
 const DIRS: Dir[] = ["up", "down", "left", "right"];
 function dcf(dir: Dir) {
@@ -41,27 +39,9 @@ function chaseDirections(ex: number, ey: number, px: number, py: number): Dir[] 
   return result;
 }
 
-const CROSS: [number, number][] = [
-  [0, -1],
-  [-1, 0],
-  [0, 0],
-  [1, 0],
-  [0, 1],
-];
-
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export type GrenadierPhase = "alive" | "dead";
-
-export interface GrenadierGrenade {
-  tileX: number;
-  tileY: number;
-  dc: number;
-  dr: number;
-  phase: "flying" | "exploding" | "done";
-  tick: number;
-  cells: [number, number][];
-}
 
 export interface GrenadierEntity {
   x: number;
@@ -75,16 +55,19 @@ export interface GrenadierEntity {
   animFrame: number;
   animTick: number;
   phase: GrenadierPhase;
+  activated: boolean;
+  teleportCooldown: number;
   throwCooldown: number;
-  shooting: boolean; // true when LOS is active — suppress patrol movement
+  shooting: boolean;
+  digging: boolean;
+  digTileX: number;
+  digTileY: number;
 }
 
 // ── Manager ───────────────────────────────────────────────────────────────────
-type SolidChecker = { hasSolidAt: (col: number, row: number) => boolean };
 
 export class GrenadierManager {
   private entities: GrenadierEntity[] = [];
-  private grenades: GrenadierGrenade[] = [];
 
   place(playerX: number, playerY: number, terrain: Terrain): void {
     const tileX = Math.round(playerX / TILE_SIZE);
@@ -104,8 +87,13 @@ export class GrenadierManager {
       animFrame: 0,
       animTick: 0,
       phase: "alive",
+      activated: false,
+      teleportCooldown: 0,
       throwCooldown: THROW_COOLDOWN,
       shooting: false,
+      digging: false,
+      digTileX: 0,
+      digTileY: 0,
     });
   }
 
@@ -115,6 +103,7 @@ export class GrenadierManager {
         e.phase = "dead";
         e.moving = false;
         e.shooting = false;
+        e.digging = false;
       }
     }
   }
@@ -124,29 +113,48 @@ export class GrenadierManager {
     solidAt: (col: number, row: number) => boolean,
     playerTileX: number,
     playerTileY: number,
-    solidCheckers: SolidChecker[] = [],
+    grenadeMgr: GrenadeManager,
+    applyDig?: (col: number, row: number, digPower: number) => void,
   ): void {
-    // ── Grenadier entities ────────────────────────────────────────────────────
     for (const e of this.entities) {
       if (e.phase === "dead") continue;
+      if (!e.activated) {
+        if (Math.max(Math.abs(playerTileX - e.tileX), Math.abs(playerTileY - e.tileY)) <= CHASE_RANGE) e.activated = true;
+        else continue;
+      }
 
       const losDir = this.checkLOS(e, terrain, playerTileX, playerTileY);
 
       if (losDir) {
-        // Face the player, stop moving, tick throw cooldown
+        // Face the player, stop moving/digging, tick throw cooldown
         e.shooting = true;
         e.moving = false;
+        e.digging = false;
         e.dir = losDir;
         e.throwCooldown--;
         if (e.throwCooldown <= 0) {
-          this.throwGrenade(e, losDir, terrain);
+          grenadeMgr.placeAt(e.tileX, e.tileY, losDir as Exclude<Dir, "none">, terrain);
           e.throwCooldown = THROW_COOLDOWN;
         }
       } else {
         e.shooting = false;
         if (e.throwCooldown > 0) e.throwCooldown--;
 
-        // Patrol movement (identical to BrownManager)
+        if (e.digging) {
+          if (!isStone(terrain, e.digTileX, e.digTileY)) {
+            e.targetTileX = e.digTileX;
+            e.targetTileY = e.digTileY;
+            e.digging = false;
+            e.moving = true;
+          } else {
+            applyDig?.(e.digTileX, e.digTileY, DIG_POWER);
+            e.animTick++;
+            if (e.animTick >= ANIM_TICKS) { e.animTick = 0; e.animFrame = (e.animFrame + 1) % 4; }
+          }
+          continue;
+        }
+
+        // Patrol movement
         if (e.moving) {
           const targetX = e.targetTileX * TILE_SIZE;
           const targetY = e.targetTileY * TILE_SIZE;
@@ -158,7 +166,7 @@ export class GrenadierManager {
             e.y = targetY;
             e.tileX = e.targetTileX;
             e.tileY = e.targetTileY;
-            this.startMove(e, terrain, solidAt, playerTileX, playerTileY);
+            this.startMove(e, terrain, solidAt, playerTileX, playerTileY, !!applyDig);
           } else {
             e.x += Math.sign(remX) * SPEED;
             e.y += Math.sign(remY) * SPEED;
@@ -170,35 +178,10 @@ export class GrenadierManager {
             e.animFrame = (e.animFrame + 1) % 4;
           }
         } else {
-          this.startMove(e, terrain, solidAt, playerTileX, playerTileY);
+          this.startMove(e, terrain, solidAt, playerTileX, playerTileY, !!applyDig);
         }
       }
     }
-
-    // ── Monster grenades ──────────────────────────────────────────────────────
-    for (const g of this.grenades) {
-      g.tick++;
-      if (g.phase === "flying") {
-        if (solidCheckers.some((s) => s.hasSolidAt(g.tileX, g.tileY))) {
-          this.explodeGrenade(g, terrain);
-          continue;
-        }
-
-        for (let i = 0; i < GRENADE_TPT && g.phase === "flying"; i++) {
-          const nc = g.tileX + g.dc,
-            nr = g.tileY + g.dr;
-          if (isStone(terrain, nc, nr) || solidCheckers.some((s) => s.hasSolidAt(nc, nr))) {
-            this.explodeGrenade(g, terrain);
-          } else {
-            g.tileX = nc;
-            g.tileY = nr;
-          }
-        }
-      } else if (g.phase === "exploding" && g.tick >= EXPLODE_TPF * EXPLODE_FRAMES) {
-        g.phase = "done";
-      }
-    }
-    this.grenades = this.grenades.filter((g) => g.phase !== "done");
   }
 
   // ── LOS ──────────────────────────────────────────────────────────────────────
@@ -242,10 +225,11 @@ export class GrenadierManager {
     return !isStone(terrain, nc, nr) && !solidAt(nc, nr);
   }
 
-  private startMove(e: GrenadierEntity, terrain: Terrain, solidAt: (col: number, row: number) => boolean, ptx: number, pty: number): void {
+  private startMove(e: GrenadierEntity, terrain: Terrain, solidAt: (col: number, row: number) => boolean, ptx: number, pty: number, canDig: boolean): void {
     const dist = Math.max(Math.abs(ptx - e.tileX), Math.abs(pty - e.tileY));
     if (dist <= CHASE_RANGE) {
-      for (const dir of chaseDirections(e.tileX, e.tileY, ptx, pty)) {
+      const dirs = chaseDirections(e.tileX, e.tileY, ptx, pty);
+      for (const dir of dirs) {
         if (this.canMove(e, dir, terrain, solidAt)) {
           e.dir = dir;
           e.targetTileX = e.tileX + dcf(dir);
@@ -254,76 +238,34 @@ export class GrenadierManager {
           return;
         }
       }
-    }
-    // Patrol
-    const wantTurn = Math.random() < TURN_CHANCE;
-    if (wantTurn || !this.canMove(e, e.dir, terrain, solidAt)) {
-      const reverse: Dir = e.dir === "up" ? "down" : e.dir === "down" ? "up" : e.dir === "left" ? "right" : "left";
-      const available = DIRS.filter((d) => this.canMove(e, d, terrain, solidAt));
-      const preferred = available.filter((d) => d !== reverse);
-      const choices = preferred.length > 0 ? preferred : available;
-      if (choices.length === 0) {
-        e.moving = false;
+      if (canDig) {
+        for (const dir of dirs) {
+          const nc = e.tileX + dcf(dir), nr = e.tileY + drf(dir);
+          if (isStone(terrain, nc, nr) && !solidAt(nc, nr)) {
+            e.dir = dir; e.digTileX = nc; e.digTileY = nr; e.digging = true; return;
+          }
+        }
+      }
+    } else {
+      if (Math.random() < TURN_CHANCE || !this.canMove(e, e.dir, terrain, solidAt)) {
+        const shuffled = [...DIRS].sort(() => Math.random() - 0.5);
+        for (const dir of shuffled) {
+          if (this.canMove(e, dir, terrain, solidAt)) { e.dir = dir; break; }
+        }
+      }
+      if (this.canMove(e, e.dir, terrain, solidAt)) {
+        e.targetTileX = e.tileX + dcf(e.dir);
+        e.targetTileY = e.tileY + drf(e.dir);
+        e.moving = true;
         return;
       }
-      e.dir = choices[Math.floor(Math.random() * choices.length)];
     }
-    e.targetTileX = e.tileX + dcf(e.dir);
-    e.targetTileY = e.tileY + drf(e.dir);
-    e.moving = true;
-  }
-
-  // ── Grenade helpers ───────────────────────────────────────────────────────────
-
-  private throwGrenade(e: GrenadierEntity, dir: Dir, terrain: Terrain): void {
-    const dc = dcf(dir),
-      dr = drf(dir);
-    const startC = e.tileX + dc,
-      startR = e.tileY + dr;
-    if (isStone(terrain, startC, startR)) return;
-    this.grenades.push({ tileX: startC, tileY: startR, dc, dr, phase: "flying", tick: 0, cells: [] });
-  }
-
-  private explodeGrenade(g: GrenadierGrenade, terrain: Terrain): void {
-    g.phase = "exploding";
-    g.tick = 0;
-    const rows = terrain.length,
-      cols = terrain[0].length;
-    const visual: [number, number][] = [];
-    for (const [dx, dy] of CROSS) {
-      const col = g.tileX + dx,
-        row = g.tileY + dy;
-      if (row < 0 || row >= rows || col < 0 || col >= cols) continue;
-      if (row === 0 || row === rows - 1 || col === 0 || col === cols - 1) continue;
-      if (isStone(terrain, col, row)) {
-        terrain[row][col] = false;
-      } else {
-        visual.push([col, row]);
-      }
-    }
-    g.cells = visual;
+    e.moving = false;
   }
 
   // ── Public ────────────────────────────────────────────────────────────────────
 
-  getFireCells(): Set<string> {
-    const cells = new Set<string>();
-    for (const g of this.grenades) {
-      if (g.phase === "exploding" && Math.floor(g.tick / EXPLODE_TPF) < CHAIN_CUTOFF) {
-        for (const [c, r] of g.cells) cells.add(`${c},${r}`);
-      }
-    }
-    return cells;
-  }
-
-  explosionFrame(g: GrenadierGrenade): number {
-    return Math.min(Math.floor(g.tick / EXPLODE_TPF), EXPLODE_FRAMES - 1);
-  }
-
   getEntities(): GrenadierEntity[] {
     return this.entities;
-  }
-  getGrenades(): GrenadierGrenade[] {
-    return this.grenades;
   }
 }

@@ -19,7 +19,7 @@ export interface TntEntity {
 
 const FUSE_TICKS_PER_FRAME = 20;  // 20 frames per fuse animation step (×3 = 60 total)
 const EXPLODE_FRAME_COUNT     = 11; // 3 source + 4 interpolated between each pair
-const EXPLODE_TICKS_PER_FRAME = 2;  // 2 ticks per frame (×11 = 22 ticks total)
+const EXPLODE_TICKS_PER_FRAME = 1;  // 2 ticks per frame (×11 = 22 ticks total)
 const DUD_CHANCE           = 0.09;
 
 // ── Explosion pattern ────────────────────────────────────────────────────────
@@ -120,11 +120,7 @@ export class TntManager {
       const col = e.tileX + dx, row = e.tileY + dy;
       if (row < 0 || row >= rows || col < 0 || col >= cols) continue;
       if (row === 0 || row === rows - 1 || col === 0 || col === cols - 1) continue;
-      if (isStone(terrain, col, row)) {
-        terrain[row][col] = false; // destroy wall, no sprite
-      } else {
-        visual.push([col, row]);
-      }
+      visual.push([col, row]);
     }
     e.cells = visual;
   }

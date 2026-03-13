@@ -24,6 +24,52 @@
     }
 
     #lobby { display: flex; flex-direction: column; gap: 0.75rem; align-items: center; }
+
+    #levelPicker {
+      max-height: 270px;
+      overflow-y: auto;
+      overflow-x: hidden;
+      width: 660px;
+      max-width: 96vw;
+      scrollbar-color: #555 #222;
+      scrollbar-width: thin;
+    }
+    #levelGrid {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 5px;
+      justify-content: center;
+      padding: 4px;
+    }
+    .levelCard {
+      cursor: pointer;
+      display: flex;
+      flex-direction: column;
+      align-items: center;
+      padding: 3px;
+      border: 2px solid #333;
+      border-radius: 2px;
+      background: #111;
+    }
+    .levelCard canvas {
+      width: 128px;
+      height: 90px;
+      image-rendering: pixelated;
+      image-rendering: crisp-edges;
+      display: block;
+    }
+    .levelCard span {
+      font-size: 0.5rem;
+      color: #888;
+      letter-spacing: 1px;
+      margin-top: 2px;
+    }
+    .levelCard:hover { border-color: #888; }
+    .levelCard:hover span { color: #ccc; }
+    .levelCard.selected { border-color: #ffdd00; }
+    .levelCard.selected span { color: #ffdd00; }
+    #levelStatus { font-size: 0.65rem; color: #555; letter-spacing: 1px; min-height: 1em; }
+
     input {
       background: #222;
       border: 2px solid #ffdd00;
@@ -71,6 +117,10 @@
   <h1>MINEBOMBERS</h1>
 
   <div id="lobby">
+    <div id="levelPicker">
+      <div id="levelGrid"></div>
+    </div>
+    <div id="levelStatus"></div>
     <input id="nameInput" type="text" placeholder="Enter name" maxlength="12" value="Player" />
     <button id="joinBtn">PLAY</button>
     <div id="status" style="font-size:0.8rem;color:#aaa;min-height:1.2em;"></div>

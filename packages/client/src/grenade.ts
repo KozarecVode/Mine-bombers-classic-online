@@ -20,7 +20,7 @@ export interface GrenadeEntity {
 
 const TILES_PER_TICK = 1.5;
 const EXPLODE_FRAME_COUNT = 11;
-const EXPLODE_TICKS_PER_FRAME = 2;
+const EXPLODE_TICKS_PER_FRAME = 1;
 const CHAIN_FRAME_CUTOFF = 6;
 
 // Simple cross:  .x. / xxx / .x.
@@ -42,21 +42,28 @@ export class GrenadeManager {
 
   place(playerX: number, playerY: number, dir: Dir, terrain: Terrain): void {
     if (dir === "none") return;
-    const playerTileX = Math.round(playerX / TILE_SIZE);
-    const playerTileY = Math.round(playerY / TILE_SIZE);
+    const tileX = Math.round(playerX / TILE_SIZE);
+    const tileY = Math.round(playerY / TILE_SIZE);
+    this.placeAt(tileX, tileY, dir, terrain);
+  }
+
+  placeAt(tileX: number, tileY: number, dir: Exclude<Dir, "none">, terrain: Terrain): void {
     const [dc, dr] = dirDelta(dir);
-    const tileX = playerTileX + dc;
-    const tileY = playerTileY + dr;
-    if (isStone(terrain, tileX, tileY)) return;
-    this.entities.push({
+    const startX = tileX + dc;
+    const startY = tileY + dr;
+    // If wall is immediately in front, explode at player's tile right away
+    const wallAhead = isStone(terrain, startX, startY);
+    const e: GrenadeEntity = {
       id: this.nextId++,
-      tileX,
-      tileY,
+      tileX: wallAhead ? tileX : startX,
+      tileY: wallAhead ? tileY : startY,
       dir,
       phase: "flying",
       tick: 0,
       cells: [],
-    });
+    };
+    this.entities.push(e);
+    if (wallAhead) this.triggerExplosion(e, terrain);
   }
 
   update(terrain: Terrain, solidCheckers: SolidChecker[] = []): void {
@@ -91,11 +98,7 @@ export class GrenadeManager {
     e.tick = 0;
     const visual: [number, number][] = [];
     for (const [col, row] of this.computeCells(e.tileX, e.tileY, terrain)) {
-      if (isStone(terrain, col, row)) {
-        terrain[row][col] = false; // destroy wall, no sprite
-      } else {
-        visual.push([col, row]);
-      }
+      visual.push([col, row]);
     }
     e.cells = visual;
   }

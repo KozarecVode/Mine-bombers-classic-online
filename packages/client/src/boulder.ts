@@ -52,6 +52,19 @@ export class BoulderManager {
     return true;
   }
 
+  /** Destroy boulders touched by fire; returns their tile positions. */
+  applyFire(fireCells: Set<string>): { col: number; row: number }[] {
+    const destroyed: { col: number; row: number }[] = [];
+    this.boulders = this.boulders.filter(b => {
+      if (fireCells.has(`${b.tileX},${b.tileY}`)) {
+        destroyed.push({ col: b.tileX, row: b.tileY });
+        return false;
+      }
+      return true;
+    });
+    return destroyed;
+  }
+
   getFireCells(): Set<string> { return new Set(); }
 
   chainDetonate(_fireCells: Set<string>, _terrain: Terrain): void {}

@@ -19,7 +19,7 @@ export interface BigCrossEntity {
 
 const FUSE_TICKS_PER_FRAME    = 20;
 const EXPLODE_FRAME_COUNT     = 11;
-const EXPLODE_TICKS_PER_FRAME = 2;
+const EXPLODE_TICKS_PER_FRAME = 1;
 const CHAIN_FRAME_CUTOFF      = 6;
 
 // ── Manager ──────────────────────────────────────────────────────────────────
@@ -57,7 +57,7 @@ export class BigCrossManager {
     });
   }
 
-  update(playerX: number, playerY: number, terrain: Terrain): void {
+  update(playerX: number, playerY: number, terrain: Terrain, solidAt?: (col: number, row: number) => boolean): void {
     const { MARGIN, HB } = BigCrossManager;
     const pl = playerX + MARGIN, pr = playerX + MARGIN + HB;
     const pt = playerY + MARGIN, pb = playerY + MARGIN + HB;
@@ -70,21 +70,21 @@ export class BigCrossManager {
         if (!overlaps) e.grace = false;
       }
       if (e.phase === 'fusing' && e.tick >= FUSE_TICKS_PER_FRAME * 3) {
-        this.triggerExplosion(e, terrain);
+        this.triggerExplosion(e, terrain, solidAt);
       } else if (e.phase === 'exploding' && e.tick >= EXPLODE_TICKS_PER_FRAME * EXPLODE_FRAME_COUNT) {
         e.phase = 'done';
       }
     }
 
-    this.chainDetonate(this.getFireCells(), terrain);
+    this.chainDetonate(this.getFireCells(), terrain, solidAt);
     this.entities = this.entities.filter(e => e.phase !== 'done');
   }
 
   /** Trigger any fusing entities whose tile appears in the given fire-cell set. */
-  chainDetonate(cells: Set<string>, terrain: Terrain): void {
+  chainDetonate(cells: Set<string>, terrain: Terrain, solidAt?: (col: number, row: number) => boolean): void {
     for (const e of this.entities) {
       if (e.phase === 'fusing' && cells.has(`${e.tileX},${e.tileY}`)) {
-        this.triggerExplosion(e, terrain);
+        this.triggerExplosion(e, terrain, solidAt);
       }
     }
   }
@@ -100,23 +100,19 @@ export class BigCrossManager {
     return cells;
   }
 
-  private triggerExplosion(e: BigCrossEntity, terrain: Terrain): void {
+  private triggerExplosion(e: BigCrossEntity, terrain: Terrain, solidAt?: (col: number, row: number) => boolean): void {
     e.phase = 'exploding';
     e.tick = 0;
-    const allCells = this.computeCells(e.tileX, e.tileY, terrain);
+    const allCells = this.computeCells(e.tileX, e.tileY, terrain, solidAt);
     const visual: [number, number][] = [];
     for (const [col, row] of allCells) {
-      if (isStone(terrain, col, row)) {
-        terrain[row][col] = false; // destroy wall, no sprite
-      } else {
-        visual.push([col, row]);
-      }
+      visual.push([col, row]);
     }
     e.cells = visual;
   }
 
-  /** Compute all cells in the cross arms, passing through walls (border stops the arm). */
-  private computeCells(tileX: number, tileY: number, terrain: Terrain): [number, number][] {
+  /** Compute all cells in the cross arms, stopping at solid walls, doors, and switches. */
+  private computeCells(tileX: number, tileY: number, terrain: Terrain, solidAt?: (col: number, row: number) => boolean): [number, number][] {
     const rows = terrain.length, cols = terrain[0].length;
     const cells: [number, number][] = [[tileX, tileY]];
     for (const [dc, dr] of [[1, 0], [-1, 0], [0, 1], [0, -1]] as [number, number][]) {
@@ -125,6 +121,7 @@ export class BigCrossManager {
       while (r >= 0 && r < rows && c >= 0 && c < cols && steps < this.maxRange) {
         const isBorder = r === 0 || r === rows - 1 || c === 0 || c === cols - 1;
         if (isBorder) break;
+        if (solidAt?.(c, r)) break;
         cells.push([c, r]);
         c += dc; r += dr;
         steps++;

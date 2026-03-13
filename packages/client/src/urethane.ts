@@ -1,5 +1,5 @@
 import { TILE_SIZE } from "@minebombers/shared";
-import { Terrain, isStone } from "./terrain.js";
+import { Terrain, isStone, BASE_DIG_RATE } from "./terrain.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -54,21 +54,37 @@ export class UrethaneManager {
     const tileX = Math.round(playerX / TILE_SIZE);
     const tileY = Math.round(playerY / TILE_SIZE);
     const rows = terrain.length, cols = terrain[0].length;
+    const MAX_HALF = 5;
 
+    // BFS flood-fill: terrain tiles stop expansion entirely (not just skip)
     const cells: [number, number][] = [];
-    for (const [dx, dy] of PATTERN) {
-      const col = tileX + dx, row = tileY + dy;
-      if (row < 0 || row >= rows || col < 0 || col >= cols) continue;
-      if (row === 0 || row === rows - 1 || col === 0 || col === cols - 1) continue;
-      if (isStone(terrain, col, row)) continue;
-      if (blocked?.(col, row)) continue;
-      cells.push([col, row]);
+    const visited = new Set<string>();
+    visited.add(`${tileX},${tileY}`);
+    const queue: [number, number][] = [[tileX, tileY]];
+
+    while (queue.length > 0) {
+      const [c, r] = queue.shift()!;
+      if (c <= 0 || c >= cols - 1 || r <= 0 || r >= rows - 1) continue;
+      if (isStone(terrain, c, r)) continue;
+      if (blocked?.(c, r)) continue;
+      cells.push([c, r]);
+      if (Math.abs(c - tileX) + Math.abs(r - tileY) >= MAX_HALF) continue;
+      for (const [dc, dr] of [[-1,0],[1,0],[0,-1],[0,1]] as const) {
+        const key = `${c+dc},${r+dr}`;
+        if (!visited.has(key)) { visited.add(key); queue.push([c+dc, r+dr]); }
+      }
     }
+
     this.entities.push({ id: this.nextId++, phase: "placed", tick: 0, centerX: tileX, centerY: tileY, cells });
   }
 
   hasCellAt(col: number, row: number): boolean {
     return this.entities.some(e => e.phase !== "done" && e.cells.some(([c, r]) => c === col && r === row));
+  }
+
+  /** Place a single urethane tile from a level file — no spread, no fuse, just draws urethane_2.png at that tile. */
+  placeTile(tileX: number, tileY: number): void {
+    this.entities.push({ id: this.nextId++, phase: "burning", tick: 0, centerX: tileX, centerY: tileY, cells: [[tileX, tileY]] });
   }
 
   private ignite(e: UrethaneEntity): void {
@@ -94,6 +110,7 @@ export class UrethaneManager {
 
   chainDetonate(fireCells: Set<string>, _terrain: Terrain): void {
     for (const e of this.entities) {
+      if (e.isStatic) continue;
       if (e.phase === "placed") {
         // Any fire on center tile ignites early
         if (fireCells.has(`${e.centerX},${e.centerY}`)) this.ignite(e);
@@ -119,7 +136,7 @@ export class UrethaneManager {
 
   hasSolidAt(col: number, row: number): boolean {
     for (const e of this.entities) {
-      if (e.phase === "burning") {
+      if (e.phase === "burning" && !e.isStatic) {
         for (const [c, r] of e.cells) if (c === col && r === row) return true;
       }
     }
@@ -135,7 +152,7 @@ export class UrethaneManager {
   spreadFireThrough(flameFire: Set<string>, allFire: Set<string>): void {
     const SPREAD_DEPTH = 4;
     for (const e of this.entities) {
-      if (e.phase !== "burning") continue;
+      if (e.phase !== "burning" || e.isStatic) continue;
 
       const cellSet = new Set(e.cells.map(([c, r]) => `${c},${r}`));
       const toDestroy = new Set<string>();
@@ -175,6 +192,27 @@ export class UrethaneManager {
       e.cells = e.cells.filter(([c, r]) => !toDestroy.has(`${c},${r}`));
       if (e.cells.length === 0) e.phase = "done";
     }
+  }
+
+  private static readonly CELL_DIG_HP = BASE_DIG_RATE * 60 * 4; // ~4 s at digPower=1
+  private digHp = new Map<string, number>();
+
+  /** Dig into a burning urethane cell. Returns true when the cell is fully dug through. */
+  applyDigDamage(col: number, row: number, digPower: number): boolean {
+    if (!this.hasSolidAt(col, row)) return false;
+    const k = `${col},${row}`;
+    const hp = this.digHp.get(k) ?? UrethaneManager.CELL_DIG_HP;
+    const next = hp - BASE_DIG_RATE * digPower;
+    if (next <= 0) {
+      this.digHp.delete(k);
+      for (const e of this.entities) {
+        e.cells = e.cells.filter(([c, r]) => !(c === col && r === row));
+        if (e.cells.length === 0 && e.phase === 'burning') e.phase = 'done';
+      }
+      return true;
+    }
+    this.digHp.set(k, next);
+    return false;
   }
 
   fireFrame(f: UrethaneFire): number {

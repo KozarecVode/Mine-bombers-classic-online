@@ -6,8 +6,9 @@ import { Dir } from './game.js';
 
 const SPEED       = 1.5; // 1.5× brown speed
 const ANIM_TICKS  = 4;   // proportionally faster animation
-const TURN_CHANCE = 0.25;
-const CHASE_RANGE = 12;
+const CHASE_RANGE = 10;
+const TURN_CHANCE = 0.1;
+const DIG_POWER   = 52;
 
 const DIRS: Dir[] = ['up', 'down', 'left', 'right'];
 
@@ -43,6 +44,11 @@ export interface GreyEntity {
   animFrame: number;
   animTick: number;
   phase: GreyPhase;
+  activated: boolean;
+  teleportCooldown: number;
+  digging: boolean;
+  digTileX: number;
+  digTileY: number;
 }
 
 // ── Manager ───────────────────────────────────────────────────────────────────
@@ -68,6 +74,11 @@ export class GreyManager {
       animFrame: 0,
       animTick: 0,
       phase: 'alive',
+      activated: false,
+      teleportCooldown: 0,
+      digging: false,
+      digTileX: 0,
+      digTileY: 0,
     });
   }
 
@@ -76,13 +87,39 @@ export class GreyManager {
       if (g.phase === 'alive' && fireCells.has(`${g.tileX},${g.tileY}`)) {
         g.phase = 'dead';
         g.moving = false;
+        g.digging = false;
       }
     }
   }
 
-  update(terrain: Terrain, solidAt: (col: number, row: number) => boolean, ptx: number, pty: number): void {
+  update(
+    terrain: Terrain,
+    solidAt: (col: number, row: number) => boolean,
+    ptx: number,
+    pty: number,
+    applyDig?: (col: number, row: number, digPower: number) => void,
+  ): void {
     for (const g of this.greys) {
       if (g.phase === 'dead') continue;
+      if (!g.activated) {
+        if (Math.max(Math.abs(ptx - g.tileX), Math.abs(pty - g.tileY)) <= CHASE_RANGE) g.activated = true;
+        else continue;
+      }
+
+      if (g.digging) {
+        if (!isStone(terrain, g.digTileX, g.digTileY)) {
+          g.targetTileX = g.digTileX;
+          g.targetTileY = g.digTileY;
+          g.digging = false;
+          g.moving = true;
+        } else {
+          applyDig?.(g.digTileX, g.digTileY, DIG_POWER);
+          g.animTick++;
+          if (g.animTick >= ANIM_TICKS) { g.animTick = 0; g.animFrame = (g.animFrame + 1) % 4; }
+        }
+        continue;
+      }
+
       if (g.moving) {
         const targetX = g.targetTileX * TILE_SIZE;
         const targetY = g.targetTileY * TILE_SIZE;
@@ -94,7 +131,7 @@ export class GreyManager {
           g.y = targetY;
           g.tileX = g.targetTileX;
           g.tileY = g.targetTileY;
-          this.startMove(g, terrain, solidAt, ptx, pty);
+          this.startMove(g, terrain, solidAt, ptx, pty, !!applyDig);
         } else {
           g.x += Math.sign(remX) * SPEED;
           g.y += Math.sign(remY) * SPEED;
@@ -106,7 +143,7 @@ export class GreyManager {
           g.animFrame = (g.animFrame + 1) % 4;
         }
       } else {
-        this.startMove(g, terrain, solidAt, ptx, pty);
+        this.startMove(g, terrain, solidAt, ptx, pty, !!applyDig);
       }
     }
   }
@@ -117,10 +154,11 @@ export class GreyManager {
     return !isStone(terrain, nc, nr) && !solidAt(nc, nr);
   }
 
-  private startMove(g: GreyEntity, terrain: Terrain, solidAt: (col: number, row: number) => boolean, ptx: number, pty: number): void {
+  private startMove(g: GreyEntity, terrain: Terrain, solidAt: (col: number, row: number) => boolean, ptx: number, pty: number, canDig: boolean): void {
     const dist = Math.max(Math.abs(ptx - g.tileX), Math.abs(pty - g.tileY));
     if (dist <= CHASE_RANGE) {
-      for (const dir of chaseDirections(g.tileX, g.tileY, ptx, pty)) {
+      const dirs = chaseDirections(g.tileX, g.tileY, ptx, pty);
+      for (const dir of dirs) {
         if (this.canMove(g, dir, terrain, solidAt)) {
           g.dir = dir;
           g.targetTileX = g.tileX + dc(dir);
@@ -129,21 +167,29 @@ export class GreyManager {
           return;
         }
       }
+      if (canDig) {
+        for (const dir of dirs) {
+          const nc = g.tileX + dc(dir), nr = g.tileY + dr(dir);
+          if (isStone(terrain, nc, nr) && !solidAt(nc, nr)) {
+            g.dir = dir; g.digTileX = nc; g.digTileY = nr; g.digging = true; return;
+          }
+        }
+      }
+    } else {
+      if (Math.random() < TURN_CHANCE || !this.canMove(g, g.dir, terrain, solidAt)) {
+        const shuffled = [...DIRS].sort(() => Math.random() - 0.5);
+        for (const dir of shuffled) {
+          if (this.canMove(g, dir, terrain, solidAt)) { g.dir = dir; break; }
+        }
+      }
+      if (this.canMove(g, g.dir, terrain, solidAt)) {
+        g.targetTileX = g.tileX + dc(g.dir);
+        g.targetTileY = g.tileY + dr(g.dir);
+        g.moving = true;
+        return;
+      }
     }
-    // Patrol
-    const wantTurn = Math.random() < TURN_CHANCE;
-    if (wantTurn || !this.canMove(g, g.dir, terrain, solidAt)) {
-      const reverse: Dir = g.dir === 'up' ? 'down' : g.dir === 'down' ? 'up' :
-                           g.dir === 'left' ? 'right' : 'left';
-      const available = DIRS.filter(d => this.canMove(g, d, terrain, solidAt));
-      const preferred = available.filter(d => d !== reverse);
-      const choices = preferred.length > 0 ? preferred : available;
-      if (choices.length === 0) { g.moving = false; return; }
-      g.dir = choices[Math.floor(Math.random() * choices.length)];
-    }
-    g.targetTileX = g.tileX + dc(g.dir);
-    g.targetTileY = g.tileY + dr(g.dir);
-    g.moving = true;
+    g.moving = false;
   }
 
   getEntities(): GreyEntity[] {

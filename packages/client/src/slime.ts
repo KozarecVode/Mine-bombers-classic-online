@@ -6,8 +6,9 @@ import { Dir } from './game.js';
 
 const SPEED       = 0.5; // pixels per frame (quarter player speed)
 const ANIM_TICKS  = 12;  // frames per animation step
-const TURN_CHANCE = 0.25; // probability of randomly turning at each tile arrival
-const CHASE_RANGE = 12;  // tiles — switch from patrol to chase
+const CHASE_RANGE = 10;  // tiles — chase player within this distance
+const TURN_CHANCE = 0.1; // probability of picking a new patrol direction each step
+const DIG_POWER   = 12;
 
 const DIRS: Dir[] = ['up', 'down', 'left', 'right'];
 
@@ -43,6 +44,11 @@ export interface SlimeEntity {
   animFrame: number;
   animTick: number;
   phase: SlimePhase;
+  activated: boolean;
+  teleportCooldown: number;
+  digging: boolean;
+  digTileX: number;
+  digTileY: number;
 }
 
 // ── Manager ───────────────────────────────────────────────────────────────────
@@ -68,6 +74,11 @@ export class SlimeManager {
       animFrame: 0,
       animTick: 0,
       phase: 'alive',
+      activated: false,
+      teleportCooldown: 0,
+      digging: false,
+      digTileX: 0,
+      digTileY: 0,
     });
   }
 
@@ -76,13 +87,40 @@ export class SlimeManager {
       if (s.phase === 'alive' && fireCells.has(`${s.tileX},${s.tileY}`)) {
         s.phase = 'dead';
         s.moving = false;
+        s.digging = false;
       }
     }
   }
 
-  update(terrain: Terrain, solidAt: (col: number, row: number) => boolean, ptx: number, pty: number): void {
+  update(
+    terrain: Terrain,
+    solidAt: (col: number, row: number) => boolean,
+    ptx: number,
+    pty: number,
+    applyDig?: (col: number, row: number, digPower: number) => void,
+  ): void {
     for (const s of this.slimes) {
       if (s.phase === 'dead') continue;
+      if (!s.activated) {
+        if (Math.max(Math.abs(ptx - s.tileX), Math.abs(pty - s.tileY)) <= CHASE_RANGE) s.activated = true;
+        else continue;
+      }
+
+      if (s.digging) {
+        if (!isStone(terrain, s.digTileX, s.digTileY)) {
+          // Tile became passable — move into it
+          s.targetTileX = s.digTileX;
+          s.targetTileY = s.digTileY;
+          s.digging = false;
+          s.moving = true;
+        } else {
+          applyDig?.(s.digTileX, s.digTileY, DIG_POWER);
+          s.animTick++;
+          if (s.animTick >= ANIM_TICKS) { s.animTick = 0; s.animFrame = (s.animFrame + 1) % 4; }
+        }
+        continue;
+      }
+
       if (s.moving) {
         const targetX = s.targetTileX * TILE_SIZE;
         const targetY = s.targetTileY * TILE_SIZE;
@@ -95,7 +133,7 @@ export class SlimeManager {
           s.y = targetY;
           s.tileX = s.targetTileX;
           s.tileY = s.targetTileY;
-          this.startMove(s, terrain, solidAt, ptx, pty);
+          this.startMove(s, terrain, solidAt, ptx, pty, !!applyDig);
         } else {
           s.x += Math.sign(remX) * SPEED;
           s.y += Math.sign(remY) * SPEED;
@@ -107,7 +145,7 @@ export class SlimeManager {
           s.animFrame = (s.animFrame + 1) % 4;
         }
       } else {
-        this.startMove(s, terrain, solidAt, ptx, pty);
+        this.startMove(s, terrain, solidAt, ptx, pty, !!applyDig);
       }
     }
   }
@@ -118,10 +156,11 @@ export class SlimeManager {
     return !isStone(terrain, nc, nr) && !solidAt(nc, nr);
   }
 
-  private startMove(s: SlimeEntity, terrain: Terrain, solidAt: (col: number, row: number) => boolean, ptx: number, pty: number): void {
+  private startMove(s: SlimeEntity, terrain: Terrain, solidAt: (col: number, row: number) => boolean, ptx: number, pty: number, canDig: boolean): void {
     const dist = Math.max(Math.abs(ptx - s.tileX), Math.abs(pty - s.tileY));
     if (dist <= CHASE_RANGE) {
-      for (const dir of chaseDirections(s.tileX, s.tileY, ptx, pty)) {
+      const dirs = chaseDirections(s.tileX, s.tileY, ptx, pty);
+      for (const dir of dirs) {
         if (this.canMove(s, dir, terrain, solidAt)) {
           s.dir = dir;
           s.targetTileX = s.tileX + dc(dir);
@@ -130,21 +169,29 @@ export class SlimeManager {
           return;
         }
       }
+      if (canDig) {
+        for (const dir of dirs) {
+          const nc = s.tileX + dc(dir), nr = s.tileY + dr(dir);
+          if (isStone(terrain, nc, nr) && !solidAt(nc, nr)) {
+            s.dir = dir; s.digTileX = nc; s.digTileY = nr; s.digging = true; return;
+          }
+        }
+      }
+    } else {
+      if (Math.random() < TURN_CHANCE || !this.canMove(s, s.dir, terrain, solidAt)) {
+        const shuffled = [...DIRS].sort(() => Math.random() - 0.5);
+        for (const dir of shuffled) {
+          if (this.canMove(s, dir, terrain, solidAt)) { s.dir = dir; break; }
+        }
+      }
+      if (this.canMove(s, s.dir, terrain, solidAt)) {
+        s.targetTileX = s.tileX + dc(s.dir);
+        s.targetTileY = s.tileY + dr(s.dir);
+        s.moving = true;
+        return;
+      }
     }
-    // Patrol
-    const wantTurn = Math.random() < TURN_CHANCE;
-    if (wantTurn || !this.canMove(s, s.dir, terrain, solidAt)) {
-      const reverse: Dir = s.dir === 'up' ? 'down' : s.dir === 'down' ? 'up' :
-                           s.dir === 'left' ? 'right' : 'left';
-      const available = DIRS.filter(d => this.canMove(s, d, terrain, solidAt));
-      const preferred = available.filter(d => d !== reverse);
-      const choices = preferred.length > 0 ? preferred : available;
-      if (choices.length === 0) { s.moving = false; return; }
-      s.dir = choices[Math.floor(Math.random() * choices.length)];
-    }
-    s.targetTileX = s.tileX + dc(s.dir);
-    s.targetTileY = s.tileY + dr(s.dir);
-    s.moving = true;
+    s.moving = false;
   }
 
   getEntities(): SlimeEntity[] {

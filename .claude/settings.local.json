@@ -4,7 +4,8 @@
       "WebFetch(domain:dosgames.com)",
       "WebFetch(domain:raw.githubusercontent.com)",
       "Bash(xargs cat)",
-      "Bash(find c:/Work/minebombers/packages/client/public/art/texture/weapons -name *landmine* -o -name *land*)"
+      "Bash(find c:/Work/minebombers/packages/client/public/art/texture/weapons -name *landmine* -o -name *land*)",
+      "Bash(xargs grep:*)"
     ]
   }
 }

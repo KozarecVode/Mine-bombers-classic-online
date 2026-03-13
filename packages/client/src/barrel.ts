@@ -23,7 +23,7 @@ export interface BarrelEntity {
 // ── Constants ─────────────────────────────────────────────────────────────────
 
 const EXPLODE_FRAME_COUNT     = 11;
-const EXPLODE_TICKS_PER_FRAME = 2;
+const EXPLODE_TICKS_PER_FRAME = 1;
 const CHAIN_FRAME_CUTOFF      = 6;
 
 // Central blast: diamond radius 2
@@ -98,11 +98,7 @@ export class BarrelManager {
       const col = centerCol + dx, row = centerRow + dy;
       if (row < 0 || row >= rows || col < 0 || col >= cols) continue;
       if (row === 0 || row === rows - 1 || col === 0 || col === cols - 1) continue;
-      if (isStone(terrain, col, row)) {
-        terrain[row][col] = false;
-      } else {
-        visual.push([col, row]);
-      }
+      visual.push([col, row]);
     }
     return visual;
   }

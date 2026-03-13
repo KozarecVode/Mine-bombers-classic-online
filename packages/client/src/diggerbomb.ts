@@ -19,7 +19,7 @@ export interface DiggerBombEntity {
 
 const FUSE_TICKS           = 120; // 2 seconds at 60 fps
 const EXPLODE_FRAME_COUNT  = 11;
-const EXPLODE_TICKS_PER_FRAME = 2;
+const EXPLODE_TICKS_PER_FRAME = 1;
 const CHAIN_FRAME_CUTOFF   = 6;
 const MARGIN = 1;
 const HB     = 12;
@@ -63,12 +63,7 @@ export class DiggerBombManager {
     const rows = terrain.length, cols = terrain[0].length;
     const col = e.tileX, row = e.tileY;
     if (row <= 0 || row >= rows - 1 || col <= 0 || col >= cols - 1) { e.cells = []; return; }
-    if (isStone(terrain, col, row)) {
-      terrain[row][col] = false;
-      e.cells = [];
-    } else {
-      e.cells = [[col, row]];
-    }
+    e.cells = [[col, row]];
   }
 
   getFireCells(): Set<string> {

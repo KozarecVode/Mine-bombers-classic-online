@@ -8,6 +8,8 @@ interface WeaponMgr {
   tryPush(col: number, row: number, dcol: number, drow: number, terrain: Terrain): boolean;
 }
 
+export const MAX_HEALTH = 100;
+
 export interface LocalPlayer {
   x: number;           // pixel position (interpolated, top-left of sprite)
   y: number;
@@ -17,11 +19,15 @@ export interface LocalPlayer {
   targetTileY: number;
   dir: Dir;
   moving: boolean;
+  digging: boolean;    // pressing into a diggable tile
   pendingStop: boolean; // stop at next tile boundary
   animFrame: number;
   animTick: number;
   color: number;
   name: string;
+  cash: number;
+  health: number;
+  digPower: number;
 }
 
 const ANIM_TICKS = 5;
@@ -38,11 +44,15 @@ export function createLocalPlayer(name: string, color: number): LocalPlayer {
     targetTileY: startTileY,
     dir: 'down',
     moving: false,
+    digging: false,
     pendingStop: false,
     animFrame: 0,
     animTick: 0,
     color,
     name,
+    cash: 0,
+    health: MAX_HEALTH,
+    digPower: 1,
   };
 }
 
@@ -106,7 +116,7 @@ export function updatePlayer(
     }
   }
 
-  if (player.moving) {
+  if (player.moving || player.digging) {
     player.animTick++;
     if (player.animTick >= ANIM_TICKS) {
       player.animTick = 0;

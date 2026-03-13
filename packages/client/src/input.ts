@@ -2,6 +2,7 @@ import { Direction } from '@minebombers/shared';
 
 export class InputManager {
   private keys = new Set<string>();
+  private _committedDir: Direction = 'none';
   private _bombPressed = false;
   private _tntPressed = false;
   private _bigCrossPressed = false;
@@ -9,10 +10,15 @@ export class InputManager {
   private _stopPressed = false;
   private _fireExtPressed = false;
   private _detonatePressed = false;
+  private _treasurePressed = false;
 
   constructor() {
     window.addEventListener('keydown', (e) => {
       this.keys.add(e.code);
+      if (e.code === 'ArrowUp'    || e.code === 'KeyW') this._committedDir = 'up';
+      if (e.code === 'ArrowDown'  || e.code === 'KeyX') this._committedDir = 'down';
+      if (e.code === 'ArrowLeft')  this._committedDir = 'left';
+      if (e.code === 'ArrowRight') this._committedDir = 'right';
       if (e.code === 'Space') {
         e.preventDefault();
         this._bombPressed = true;
@@ -30,6 +36,7 @@ export class InputManager {
       }
       if (e.code === 'KeyS') {
         this._stopPressed = true;
+        this._committedDir = 'none';
       }
       if (e.code === 'KeyA') {
         this._fireExtPressed = true;
@@ -38,6 +45,9 @@ export class InputManager {
         e.preventDefault();
         this._detonatePressed = true;
       }
+      if (e.code === 'KeyD') {
+        this._treasurePressed = true;
+      }
     });
     window.addEventListener('keyup', (e) => {
       this.keys.delete(e.code);
@@ -45,11 +55,7 @@ export class InputManager {
   }
 
   getDirection(): Direction {
-    if (this.keys.has('ArrowUp')    || this.keys.has('KeyW')) return 'up';
-    if (this.keys.has('ArrowDown')  || this.keys.has('KeyX')) return 'down';
-    if (this.keys.has('ArrowLeft')) return 'left';
-    if (this.keys.has('ArrowRight') || this.keys.has('KeyD')) return 'right';
-    return 'none';
+    return this._committedDir;
   }
 
   /** Returns true once per keypress (edge-triggered) */
@@ -98,6 +104,13 @@ export class InputManager {
   consumeDetonatePress(): boolean {
     const v = this._detonatePressed;
     this._detonatePressed = false;
+    return v;
+  }
+
+  /** Returns true once per D keypress (edge-triggered) */
+  consumeTreasurePress(): boolean {
+    const v = this._treasurePressed;
+    this._treasurePressed = false;
     return v;
   }
 }

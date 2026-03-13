@@ -29,7 +29,7 @@ const MAX_RADIUS              = 5;
 const MIN_JUMP                = 1;
 const MAX_JUMP                = 6;
 const EXPLODE_FRAME_COUNT     = 11;
-const EXPLODE_TICKS_PER_FRAME = 2;
+const EXPLODE_TICKS_PER_FRAME = 1;
 const EXPLODE_TICKS           = EXPLODE_FRAME_COUNT * EXPLODE_TICKS_PER_FRAME;
 const CHAIN_FRAME_CUTOFF      = 6;
 
@@ -50,7 +50,6 @@ function buildCircle(cx: number, cy: number, radius: number, terrain: Terrain): 
       const col = cx + dx, row = cy + dy;
       if (row < 0 || row >= rows || col < 0 || col >= cols) continue;
       if (row === 0 || row === rows - 1 || col === 0 || col === cols - 1) continue;
-      if (isStone(terrain, col, row)) continue;
       result.push([col, row]);
     }
   }

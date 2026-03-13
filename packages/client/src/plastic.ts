@@ -1,5 +1,5 @@
 import { TILE_SIZE } from "@minebombers/shared";
-import { Terrain, isStone } from "./terrain.js";
+import { Terrain, isStone, BASE_DIG_RATE } from "./terrain.js";
 
 // ── Types ────────────────────────────────────────────────────────────────────
 
@@ -20,7 +20,7 @@ export interface PlasticEntity {
 const PLACED_TICKS         = 60 * 2;  // 2s showing plastic_1
 const ARMED_TICKS          = 60 * 2;  // 2s showing plastic_2 before auto-explode
 const EXPLODE_FRAME_COUNT  = 11;
-const EXPLODE_TICKS_PER_FRAME = 2;
+const EXPLODE_TICKS_PER_FRAME = 1;
 const CHAIN_FRAME_CUTOFF   = 6;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
@@ -28,15 +28,29 @@ const CHAIN_FRAME_CUTOFF   = 6;
 function buildDiamond(cx: number, cy: number, maxHalf: number, terrain: Terrain, blocked?: (col: number, row: number) => boolean): [number, number][] {
   const rows = terrain.length, cols = terrain[0].length;
   const result: [number, number][] = [];
-  for (let dy = -maxHalf; dy <= maxHalf; dy++) {
-    const half = maxHalf - Math.abs(dy);
-    for (let dx = -half; dx <= half; dx++) {
-      const col = cx + dx, row = cy + dy;
-      if (row < 0 || row >= rows || col < 0 || col >= cols) continue;
-      if (row === 0 || row === rows - 1 || col === 0 || col === cols - 1) continue;
-      if (isStone(terrain, col, row)) continue;
-      if (blocked?.(col, row)) continue;
-      result.push([col, row]);
+  const visited = new Set<string>();
+  const queue: [number, number][] = [[cx, cy]];
+  visited.add(`${cx},${cy}`);
+
+  while (queue.length > 0) {
+    const [c, r] = queue.shift()!;
+
+    // Skip out-of-bounds, boundary, stone, or blocked — these stop expansion
+    if (c <= 0 || c >= cols - 1 || r <= 0 || r >= rows - 1) continue;
+    if (isStone(terrain, c, r)) continue;
+    if (blocked?.(c, r)) continue;
+
+    result.push([c, r]);
+
+    const dist = Math.abs(c - cx) + Math.abs(r - cy);
+    if (dist >= maxHalf) continue;
+
+    for (const [dc, dr] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) {
+      const key = `${c + dc},${r + dr}`;
+      if (!visited.has(key)) {
+        visited.add(key);
+        queue.push([c + dc, r + dr]);
+      }
     }
   }
   return result;
@@ -107,6 +121,27 @@ export class PlasticManager {
   }
 
   tryPush(_col: number, _row: number, _dc: number, _dr: number, _terrain: Terrain): boolean { return false; }
+
+  private static readonly CELL_DIG_HP = BASE_DIG_RATE * 60 * 2; // ~2 s at digPower=1
+  private digHp = new Map<string, number>();
+
+  /** Dig into an armed plastic cell. Returns true when the cell is fully dug through. */
+  applyDigDamage(col: number, row: number, digPower: number): boolean {
+    if (!this.hasSolidAt(col, row)) return false;
+    const k = `${col},${row}`;
+    const hp = this.digHp.get(k) ?? PlasticManager.CELL_DIG_HP;
+    const next = hp - BASE_DIG_RATE * digPower;
+    if (next <= 0) {
+      this.digHp.delete(k);
+      for (const e of this.entities) {
+        if (e.phase === 'armed')
+          e.armedCells = e.armedCells.filter(([c, r]) => !(c === col && r === row));
+      }
+      return true;
+    }
+    this.digHp.set(k, next);
+    return false;
+  }
 
   explosionFrame(e: PlasticEntity): number {
     return Math.min(Math.floor(e.tick / EXPLODE_TICKS_PER_FRAME), EXPLODE_FRAME_COUNT - 1);

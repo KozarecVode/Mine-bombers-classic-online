@@ -34,7 +34,7 @@ const EXPLODE_PATTERN: [number, number][] = [
 ];
 
 const EXPLODE_FRAME_COUNT = 11;
-const EXPLODE_TICKS_PER_FRAME = 2;
+const EXPLODE_TICKS_PER_FRAME = 1;
 const CHAIN_FRAME_CUTOFF = 6; // fire cells active for first 6 of 11 frames
 
 // ── Manager ───────────────────────────────────────────────────────────────────
@@ -95,11 +95,7 @@ export class TeleportManager {
         row = e.row + dy;
       if (row < 0 || row >= rows || col < 0 || col >= cols) continue;
       if (row === 0 || row === rows - 1 || col === 0 || col === cols - 1) continue;
-      if (isStone(terrain, col, row)) {
-        terrain[row][col] = false;
-      } else {
-        visual.push([col, row]);
-      }
+      visual.push([col, row]);
     }
     e.cells = visual;
   }

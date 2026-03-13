@@ -1,5 +1,5 @@
 import { TILE_SIZE, MAP_WIDTH, MAP_HEIGHT, HUD_HEIGHT } from "@minebombers/shared";
-import { Terrain } from "./terrain.js";
+import { Terrain, TerrainDetailMap, isHardDigTile } from "./terrain.js";
 import { LocalPlayer } from "./game.js";
 import { Assets } from "./assets.js";
 import { TntManager, TntEntity } from "./tnt.js";
@@ -27,6 +27,10 @@ import { GrenadierManager } from "./grenadier.js";
 import { GreyManager } from "./grey.js";
 import { DoorManager } from "./door.js";
 import { DoorSwitchManager } from "./doorswitch.js";
+import { TreasureManager, TREASURE_NAMES } from "./treasure.js";
+import { PickableManager, PICKABLE_TYPES } from "./pickable.js";
+import { CloneManager } from "./clone.js";
+import { MAX_HEALTH } from "./game.js";
 
 const DISPLAY_SCALE = 3; // render everything at 3× — game logic stays at native tile size
 
@@ -40,8 +44,9 @@ const NAME_COLORS = ["#ff4040", "#4040ff", "#40c040", "#c0a000"];
 export class Renderer {
   readonly canvas: HTMLCanvasElement;
   private ctx: CanvasRenderingContext2D;
-  private terrainCanvas: HTMLCanvasElement | null = null;
-  private cachedTerrain: Terrain | null = null;
+  private _groundPattern: CanvasPattern | null = null;
+  private _terrainCanvas: HTMLCanvasElement | null = null;
+  private _terrainDirty = true;
 
   readonly totalW: number;
   readonly totalH: number;
@@ -58,37 +63,17 @@ export class Renderer {
   }
 
   initPatterns(assets: Assets): void {
-    this.cachedTerrain = null;
+    this._groundPattern = this.ctx.createPattern(assets.ground, 'repeat');
+    this._terrainDirty = true;
     this._assets = assets;
   }
 
+  markTerrainDirty(): void { this._terrainDirty = true; }
+
   private _assets: Assets | null = null;
 
-  private buildTerrainCanvas(terrain: Terrain, assets: Assets): HTMLCanvasElement {
-    const oc = document.createElement("canvas");
-    oc.width = MAP_WIDTH * TILE_SIZE;
-    oc.height = MAP_HEIGHT * TILE_SIZE;
-    const octx = oc.getContext("2d")!;
-    octx.imageSmoothingEnabled = false;
 
-    const groundPat = octx.createPattern(assets.ground, "repeat")!;
-    const wallPat = octx.createPattern(assets.wall, "repeat")!;
-
-    octx.fillStyle = groundPat;
-    octx.fillRect(0, 0, oc.width, oc.height);
-
-    octx.fillStyle = wallPat;
-    for (let row = 0; row < MAP_HEIGHT; row++) {
-      for (let col = 0; col < MAP_WIDTH; col++) {
-        if (terrain[row][col]) {
-          octx.fillRect(col * TILE_SIZE, row * TILE_SIZE, TILE_SIZE, TILE_SIZE);
-        }
-      }
-    }
-    return oc;
-  }
-
-  render(assets: Assets, terrain: Terrain, players: LocalPlayer[], myPlayer: LocalPlayer, tnt: TntManager, bigCross: BigCrossManager, smallCross: BigCrossManager, grenade: GrenadeManager, smallBomb: BombManager, bigBomb: BombManager, landmine: LandmineManager, flameBomb: FlameBombManager, flamethrower: FlamethrowerManager, fireExt: FireExtinguisherManager, smallDet: DetBombManager, bigDet: DetBombManager, urethane: UrethaneManager, plastic: PlasticManager, nuclear: NuclearManager, jumpingBomb: JumpingBombManager, lava: LavaManager, wall: WallManager, teleport: TeleportManager, barrel: BarrelManager, diggerBomb: DiggerBombManager, boulder: BoulderManager, slime: SlimeManager, brown: BrownManager, grenadier: GrenadierManager, grey: GreyManager, door: DoorManager, doorSwitch: DoorSwitchManager, selectedWeapon: string): void {
+  render(assets: Assets, terrain: Terrain, detailMap: TerrainDetailMap, players: LocalPlayer[], myPlayer: LocalPlayer, tnt: TntManager, bigCross: BigCrossManager, smallCross: BigCrossManager, grenade: GrenadeManager, smallBomb: BombManager, bigBomb: BombManager, landmine: LandmineManager, flameBomb: FlameBombManager, flamethrower: FlamethrowerManager, fireExt: FireExtinguisherManager, smallDet: DetBombManager, bigDet: DetBombManager, urethane: UrethaneManager, plastic: PlasticManager, nuclear: NuclearManager, jumpingBomb: JumpingBombManager, lava: LavaManager, wall: WallManager, teleport: TeleportManager, barrel: BarrelManager, diggerBomb: DiggerBombManager, boulder: BoulderManager, slime: SlimeManager, brown: BrownManager, grenadier: GrenadierManager, grey: GreyManager, clone: CloneManager, door: DoorManager, doorSwitch: DoorSwitchManager, treasure: TreasureManager, pickable: PickableManager, selectedWeapon: string): void {
     const shake = nuclear.getShakeIntensity();
     if (shake > 0) {
       const MAX_SHAKE = 3;
@@ -99,11 +84,14 @@ export class Renderer {
       );
     }
     this.drawHud(players, myPlayer, selectedWeapon);
-    this.drawTerrain(terrain);
+    this.drawTerrain(detailMap, assets);
     this.drawWalls(assets, wall);
     this.drawBoulders(assets, boulder);
     this.drawDoors(assets, door);
     this.drawSwitches(assets, doorSwitch);
+    // Treasure and pickables drawn under everything so weapons/players appear on top
+    this.drawTreasure(assets, treasure);
+    this.drawPickable(assets, pickable);
     // Lava and placed phase first — other weapons draw on top
     this.drawLava(assets, lava);
     this.drawTeleports(assets, teleport);
@@ -130,6 +118,7 @@ export class Renderer {
     for (const b of brown.getEntities()) { if (b.phase === 'dead') this.drawBrown(assets, b); }
     for (const g of grenadier.getEntities()) { if (g.phase === 'dead') this.drawGrenadier(assets, g); }
     for (const g of grey.getEntities()) { if (g.phase === 'dead') this.drawGrey(assets, g); }
+    for (const c of clone.getEntities()) { if (c.phase === 'dead') this.drawClone(assets, c, detailMap); }
     // Burning/armed phase on top — covers other items beneath
     this.drawUrethane(assets, urethane, 'burning');
     this.drawPlastic(assets, plastic, 'active');
@@ -138,8 +127,8 @@ export class Renderer {
     for (const b of brown.getEntities()) { if (b.phase !== 'dead') this.drawBrown(assets, b); }
     for (const g of grenadier.getEntities()) { if (g.phase !== 'dead') this.drawGrenadier(assets, g); }
     for (const g of grey.getEntities()) { if (g.phase !== 'dead') this.drawGrey(assets, g); }
-    this.drawGrenadierGrenades(assets, grenadier);
-    for (const p of players) this.drawPlayer(assets, p);
+    for (const c of clone.getEntities()) { if (c.phase !== 'dead') this.drawClone(assets, c, detailMap); }
+    for (const p of players) this.drawPlayer(assets, p, detailMap);
     if (shake > 0) this.ctx.restore();
     this.drawNuclearFlash(nuclear);
   }
@@ -183,6 +172,13 @@ export class Renderer {
       ctx.textAlign = "left";
     }
 
+    // Cash
+    ctx.fillStyle = "#00cc44";
+    ctx.font = "9px monospace";
+    ctx.textAlign = "right";
+    ctx.fillText(`$${p.cash}`, x + 228, y + 20);
+    ctx.textAlign = "left";
+
     // Bomb count
     ctx.fillStyle = "#888";
     ctx.beginPath();
@@ -196,27 +192,81 @@ export class Renderer {
     const barX = x + 8;
     const barY = y + 33;
     const barW = 140;
+    const hpFrac = Math.max(0, p.health / MAX_HEALTH);
     ctx.fillStyle = "#330000";
     ctx.fillRect(barX, barY, barW, 9);
-    ctx.fillStyle = "#cc2020";
-    ctx.fillRect(barX, barY, barW, 9);
+    ctx.fillStyle = hpFrac > 0.5 ? "#cc2020" : hpFrac > 0.25 ? "#cc7000" : "#cccc00";
+    ctx.fillRect(barX, barY, Math.round(barW * hpFrac), 9);
     ctx.strokeStyle = "#660000";
     ctx.lineWidth = 1;
     ctx.strokeRect(barX, barY, barW, 9);
     ctx.fillStyle = "#aaa";
     ctx.font = "8px monospace";
     ctx.fillText("HP", barX + barW + 4, barY + 8);
+
+    // Dig power
+    if (p.digPower > 0) {
+      ctx.fillStyle = "#a06030";
+      ctx.fillText(`⛏${p.digPower}`, barX, barY + 20);
+    }
   }
 
   // ── Terrain ────────────────────────────────────────────────────────────────
 
-  private drawTerrain(terrain: Terrain): void {
-    if (!this._assets) return;
-    if (terrain !== this.cachedTerrain) {
-      this.cachedTerrain = terrain;
-      this.terrainCanvas = this.buildTerrainCanvas(terrain, this._assets);
+  private buildTerrainCanvas(detailMap: TerrainDetailMap, assets: Assets): HTMLCanvasElement {
+    const oc = document.createElement('canvas');
+    oc.width  = MAP_WIDTH  * TILE_SIZE;
+    oc.height = MAP_HEIGHT * TILE_SIZE;
+    const octx = oc.getContext('2d')!;
+    octx.imageSmoothingEnabled = false;
+    octx.fillStyle = octx.createPattern(assets.ground, 'repeat')!;
+    octx.fillRect(0, 0, oc.width, oc.height);
+    for (let row = 0; row < MAP_HEIGHT; row++) {
+      for (let col = 0; col < MAP_WIDTH; col++) {
+        const { type } = detailMap[row][col];
+        if (type === 'ground') continue;
+        const x = col * TILE_SIZE, y = row * TILE_SIZE;
+        if (type === 'border') {
+          octx.drawImage(assets.wall, x, y, TILE_SIZE, TILE_SIZE);
+        } else {
+          const sprite = assets.terrainTiles[type];
+          octx.drawImage(sprite ?? assets.wall, x, y, TILE_SIZE, TILE_SIZE);
+        }
+      }
     }
-    this.ctx.drawImage(this.terrainCanvas!, 0, HUD_HEIGHT);
+    return oc;
+  }
+
+  private drawTerrain(detailMap: TerrainDetailMap, assets: Assets): void {
+    if (this._terrainDirty || !this._terrainCanvas) {
+      this._terrainCanvas = this.buildTerrainCanvas(detailMap, assets);
+      this._terrainDirty = false;
+    }
+    this.ctx.drawImage(this._terrainCanvas, 0, HUD_HEIGHT);
+  }
+
+  // ── Treasure ───────────────────────────────────────────────────────────────
+
+  private drawTreasure(assets: Assets, mgr: TreasureManager): void {
+    const { ctx } = this;
+    for (const e of mgr.getEntities()) {
+      const sprite = assets.treasure[TREASURE_NAMES.indexOf(e.type)];
+      if (!sprite) continue;
+      const x = e.col * TILE_SIZE;
+      const y = e.row * TILE_SIZE + HUD_HEIGHT;
+      ctx.drawImage(sprite, x, y, TILE_SIZE, TILE_SIZE);
+    }
+  }
+
+  // ── Pickables ──────────────────────────────────────────────────────────────
+
+  private drawPickable(assets: Assets, mgr: PickableManager): void {
+    const { ctx } = this;
+    for (const e of mgr.getEntities()) {
+      const sprite = assets.pickable[PICKABLE_TYPES.indexOf(e.type)];
+      if (!sprite) continue;
+      ctx.drawImage(sprite, e.col * TILE_SIZE, e.row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+    }
   }
 
   // ── Teleports ──────────────────────────────────────────────────────────────
@@ -610,28 +660,43 @@ export class Renderer {
     this.ctx.drawImage(frame, Math.round(g.x), Math.round(g.y) + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
   }
 
-  private drawGrenadierGrenades(assets: Assets, mgr: GrenadierManager): void {
-    for (const g of mgr.getGrenades()) {
-      if (g.phase === 'flying') {
-        this.ctx.drawImage(assets.grenade, g.tileX * TILE_SIZE, g.tileY * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
-      } else if (g.phase === 'exploding') {
-        const frame = assets.tnt.explosion[mgr.explosionFrame(g)];
-        for (const [col, row] of g.cells) {
-          this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
-        }
-      }
+  // ── Clone ──────────────────────────────────────────────────────────────────
+
+  private drawClone(assets: Assets, e: import('./clone.js').CloneEntity, detailMap: TerrainDetailMap): void {
+    const dirKey = e.dir === 'none' ? 'down' : e.dir;
+    if (e.phase === 'dead') {
+      this.ctx.drawImage(assets.grey.dead, Math.round(e.x), Math.round(e.y) + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+      return;
     }
+    let frames: HTMLCanvasElement[];
+    if (e.digging) {
+      const cell = detailMap[e.digTileY]?.[e.digTileX];
+      frames = (cell && isHardDigTile(cell.type)) ? assets.dig[dirKey] : assets.walk[dirKey];
+    } else {
+      frames = assets.walk[dirKey];
+    }
+    const frame = (e.moving || e.digging) ? frames[e.animFrame % frames.length] : frames[0];
+    this.ctx.drawImage(frame, Math.round(e.x), Math.round(e.y) + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
   }
 
   // ── Player ─────────────────────────────────────────────────────────────────
 
-  private drawPlayer(assets: Assets, p: LocalPlayer): void {
-    const frames = assets.walk[p.dir === "none" ? "down" : p.dir];
-    const frame = p.moving ? frames[p.animFrame % frames.length] : frames[0];
+  private drawPlayer(assets: Assets, p: LocalPlayer, detailMap: TerrainDetailMap): void {
+    const dirKey = p.dir === 'none' ? 'down' : p.dir;
 
-    const dstX = Math.round(p.x);
-    const dstY = Math.round(p.y) + HUD_HEIGHT;
+    let frames: HTMLCanvasElement[];
+    if (p.digging) {
+      // Use digging animation for hard tiles, walk animation for soft tiles
+      const dcol = p.dir === 'right' ? 1 : p.dir === 'left' ? -1 : 0;
+      const drow = p.dir === 'down'  ? 1 : p.dir === 'up'   ? -1 : 0;
+      const nc = p.tileX + dcol, nr = p.tileY + drow;
+      const cell = detailMap[nr]?.[nc];
+      frames = (cell && isHardDigTile(cell.type)) ? assets.dig[dirKey] : assets.walk[dirKey];
+    } else {
+      frames = assets.walk[dirKey];
+    }
 
-    this.ctx.drawImage(frame, dstX, dstY, TILE_SIZE, TILE_SIZE);
+    const frame = (p.moving || p.digging) ? frames[p.animFrame % frames.length] : frames[0];
+    this.ctx.drawImage(frame, Math.round(p.x), Math.round(p.y) + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
   }
 }

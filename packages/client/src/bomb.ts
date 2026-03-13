@@ -19,7 +19,7 @@ export interface BombEntity {
 
 const FUSE_TICKS_PER_FRAME = 20;
 const EXPLODE_FRAME_COUNT = 11;
-const EXPLODE_TICKS_PER_FRAME = 2;
+const EXPLODE_TICKS_PER_FRAME = 1;
 const DUD_CHANCE = 0.09;
 const CHAIN_FRAME_CUTOFF = 6;
 
@@ -91,11 +91,7 @@ export class BombManager {
       const col = e.tileX + dx, row = e.tileY + dy;
       if (row < 0 || row >= rows || col < 0 || col >= cols) continue;
       if (row === 0 || row === rows - 1 || col === 0 || col === cols - 1) continue;
-      if (isStone(terrain, col, row)) {
-        terrain[row][col] = false; // destroy wall, no sprite
-      } else {
-        visual.push([col, row]);
-      }
+      visual.push([col, row]);
     }
     e.cells = visual;
   }
