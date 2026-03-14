@@ -247,11 +247,12 @@ export class GrenadierManager {
         }
       }
     } else {
+      const reverseE: Dir = e.dir === 'up' ? 'down' : e.dir === 'down' ? 'up' : e.dir === 'left' ? 'right' : 'left';
       if (Math.random() < TURN_CHANCE || !this.canMove(e, e.dir, terrain, solidAt)) {
-        const shuffled = [...DIRS].sort(() => Math.random() - 0.5);
-        for (const dir of shuffled) {
-          if (this.canMove(e, dir, terrain, solidAt)) { e.dir = dir; break; }
-        }
+        const available = DIRS.filter(d => this.canMove(e, d, terrain, solidAt));
+        const preferred = available.filter(d => d !== reverseE);
+        const choices = preferred.length > 0 ? preferred : available;
+        if (choices.length > 0) e.dir = choices[Math.floor(Math.random() * choices.length)];
       }
       if (this.canMove(e, e.dir, terrain, solidAt)) {
         e.targetTileX = e.tileX + dcf(e.dir);

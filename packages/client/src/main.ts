@@ -32,7 +32,7 @@ import { DoorManager } from "./door.js";
 import { DoorSwitchManager } from "./doorswitch.js";
 import { TreasureManager, TreasureType } from "./treasure.js";
 import { PickableManager, PICKABLE_TYPES, PickableType } from "./pickable.js";
-import { parseMneLevel, buildThumbnail, LEVEL_NAMES, generateRandomLevel } from "./levelloader.js";
+import { parseMneLevel, buildThumbnail, buildThumbnailFromParsed, LEVEL_NAMES, generateRandomLevel } from "./levelloader.js";
 import { CloneManager } from "./clone.js";
 import { MAX_HEALTH } from "./game.js";
 
@@ -46,6 +46,7 @@ const joinBtn = document.getElementById("joinBtn") as HTMLButtonElement;
 
 const levelData = new Map<string, Uint8Array>();
 let selectedLevel: string | null = null;
+let cachedRandomLevel: ReturnType<typeof generateRandomLevel> | null = null;
 
 const input = new InputManager();
 const renderer = new Renderer();
@@ -131,6 +132,22 @@ function applyParsedLevel(parsed: ReturnType<typeof parseMneLevel>): void {
 async function loadLevelThumbnails(): Promise<void> {
   levelStatusEl.textContent = "loading levels…";
 
+  // Random level card (first)
+  const randomCard = document.createElement("div");
+  randomCard.className = "levelCard selected";
+  cachedRandomLevel = generateRandomLevel();
+  randomCard.appendChild(buildThumbnailFromParsed(cachedRandomLevel));
+  const randomLabel = document.createElement("span");
+  randomLabel.textContent = "RANDOM";
+  randomCard.appendChild(randomLabel);
+  randomCard.addEventListener("click", () => {
+    levelGridEl.querySelectorAll(".levelCard").forEach((c) => c.classList.remove("selected"));
+    randomCard.classList.add("selected");
+    selectedLevel = null;
+    levelStatusEl.textContent = "RANDOM";
+  });
+  levelGridEl.appendChild(randomCard);
+
   const results = await Promise.allSettled(
     LEVEL_NAMES.map(async (name) => {
       const resp = await fetch(`/levels/${name}.MNE`);
@@ -162,7 +179,7 @@ async function loadLevelThumbnails(): Promise<void> {
     loaded++;
   }
 
-  levelStatusEl.textContent = loaded > 0 ? "select a level or play random" : "";
+  levelStatusEl.textContent = "RANDOM";
 }
 
 const WEAPONS = [
@@ -231,7 +248,8 @@ joinBtn.addEventListener("click", () => {
   if (selectedLevel && levelData.has(selectedLevel)) {
     applyParsedLevel(parseMneLevel(levelData.get(selectedLevel)!));
   } else {
-    applyParsedLevel(generateRandomLevel());
+    applyParsedLevel(cachedRandomLevel ?? generateRandomLevel());
+    cachedRandomLevel = null;
   }
   lobbyEl.style.display = "none";
   gameEl.style.display = "flex";
@@ -470,7 +488,7 @@ function loop(ts: number): void {
   lavaMgr.update(terrain, lavaBlocked);
   teleportMgr.update(terrain);
   barrelMgr.update(player.x, player.y, terrain);
-  diggerBombMgr.update(player.x, player.y, terrain);
+  if (diggerBombMgr.update(player.x, player.y, terrain, detailMap)) renderer.markTerrainDirty();
   boulderMgr.update(player.x, player.y);
   const slimeSolidAt = (c: number, r: number) =>
     tntMgr.hasSolidAt(c, r) ||
@@ -643,7 +661,7 @@ function loop(ts: number): void {
   jumpingBombMgr.chainDetonate(allFire, terrain);
   teleportMgr.chainDetonate(allFire, terrain);
   barrelMgr.chainDetonate(allFire, terrain);
-  diggerBombMgr.chainDetonate(allFire, terrain);
+  if (diggerBombMgr.chainDetonate(allFire, terrain, detailMap)) renderer.markTerrainDirty();
   wallMgr.restoreTerrain(terrain);
 
   renderer.render(

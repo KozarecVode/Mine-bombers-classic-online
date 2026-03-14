@@ -101,10 +101,6 @@ export class BrownManager {
   ): void {
     for (const b of this.browns) {
       if (b.phase === 'dead') continue;
-      if (!b.activated) {
-        if (Math.max(Math.abs(ptx - b.tileX), Math.abs(pty - b.tileY)) <= CHASE_RANGE) b.activated = true;
-        else continue;
-      }
 
       if (b.digging) {
         if (!isStone(terrain, b.digTileX, b.digTileY)) {
@@ -175,19 +171,20 @@ export class BrownManager {
           }
         }
       }
-    } else {
-      if (Math.random() < TURN_CHANCE || !this.canMove(b, b.dir, terrain, solidAt)) {
-        const shuffled = [...DIRS].sort(() => Math.random() - 0.5);
-        for (const dir of shuffled) {
-          if (this.canMove(b, dir, terrain, solidAt)) { b.dir = dir; break; }
-        }
-      }
-      if (this.canMove(b, b.dir, terrain, solidAt)) {
-        b.targetTileX = b.tileX + dc(b.dir);
-        b.targetTileY = b.tileY + dr(b.dir);
-        b.moving = true;
-        return;
-      }
+    }
+    // Fallback: patrol randomly when chase is blocked (prefer not to reverse)
+    const reverseB: Dir = b.dir === 'up' ? 'down' : b.dir === 'down' ? 'up' : b.dir === 'left' ? 'right' : 'left';
+    if (Math.random() < TURN_CHANCE || !this.canMove(b, b.dir, terrain, solidAt)) {
+      const available = DIRS.filter(d => this.canMove(b, d, terrain, solidAt));
+      const preferred = available.filter(d => d !== reverseB);
+      const choices = preferred.length > 0 ? preferred : available;
+      if (choices.length > 0) b.dir = choices[Math.floor(Math.random() * choices.length)];
+    }
+    if (this.canMove(b, b.dir, terrain, solidAt)) {
+      b.targetTileX = b.tileX + dc(b.dir);
+      b.targetTileY = b.tileY + dr(b.dir);
+      b.moving = true;
+      return;
     }
     b.moving = false;
   }

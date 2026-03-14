@@ -101,10 +101,6 @@ export class SlimeManager {
   ): void {
     for (const s of this.slimes) {
       if (s.phase === 'dead') continue;
-      if (!s.activated) {
-        if (Math.max(Math.abs(ptx - s.tileX), Math.abs(pty - s.tileY)) <= CHASE_RANGE) s.activated = true;
-        else continue;
-      }
 
       if (s.digging) {
         if (!isStone(terrain, s.digTileX, s.digTileY)) {
@@ -177,19 +173,20 @@ export class SlimeManager {
           }
         }
       }
-    } else {
-      if (Math.random() < TURN_CHANCE || !this.canMove(s, s.dir, terrain, solidAt)) {
-        const shuffled = [...DIRS].sort(() => Math.random() - 0.5);
-        for (const dir of shuffled) {
-          if (this.canMove(s, dir, terrain, solidAt)) { s.dir = dir; break; }
-        }
-      }
-      if (this.canMove(s, s.dir, terrain, solidAt)) {
-        s.targetTileX = s.tileX + dc(s.dir);
-        s.targetTileY = s.tileY + dr(s.dir);
-        s.moving = true;
-        return;
-      }
+    }
+    // Fallback: patrol randomly when chase is blocked (prefer not to reverse)
+    const reverseS: Dir = s.dir === 'up' ? 'down' : s.dir === 'down' ? 'up' : s.dir === 'left' ? 'right' : 'left';
+    if (Math.random() < TURN_CHANCE || !this.canMove(s, s.dir, terrain, solidAt)) {
+      const available = DIRS.filter(d => this.canMove(s, d, terrain, solidAt));
+      const preferred = available.filter(d => d !== reverseS);
+      const choices = preferred.length > 0 ? preferred : available;
+      if (choices.length > 0) s.dir = choices[Math.floor(Math.random() * choices.length)];
+    }
+    if (this.canMove(s, s.dir, terrain, solidAt)) {
+      s.targetTileX = s.tileX + dc(s.dir);
+      s.targetTileY = s.tileY + dr(s.dir);
+      s.moving = true;
+      return;
     }
     s.moving = false;
   }

@@ -391,7 +391,7 @@ async function loadDigAnimation(): Promise<Assets['dig']> {
 async function loadPickableAssets(): Promise<HTMLCanvasElement[]> {
   const names = ["dig_power_1", "dig_power_2", "dig_power_3", "random_weapon", "medpac"];
   const imgs = await Promise.all(names.map((n) => loadImage(`/art/texture/world/pickable/${n}.png`)));
-  return imgs.map(removeBg);
+  return imgs.map((img, i) => names[i] === "random_weapon" ? toCanvas(img) : removeBg(img));
 }
 
 export async function loadAssets(): Promise<Assets> {

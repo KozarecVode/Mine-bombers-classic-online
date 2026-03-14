@@ -221,7 +221,9 @@ export class CloneManager {
         }
       }
       if (canDig) {
-        for (const dir of dirs) {
+        // Try chase dirs first, then any dir as fallback
+        const digCandidates = [...dirs, ...[...DIRS].sort(() => Math.random() - 0.5)];
+        for (const dir of digCandidates) {
           const nc = e.tileX + dc(dir), nr = e.tileY + dr(dir);
           if (isStone(terrain, nc, nr) && !solidAt(nc, nr)) {
             e.dir = dir;

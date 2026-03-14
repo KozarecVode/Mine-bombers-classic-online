@@ -141,6 +141,47 @@ function byteToColor(b: number): [number, number, number] {
 
 // ── Thumbnail builder ─────────────────────────────────────────────────────────
 
+/** Build thumbnail from a ParsedLevel (for random map previews). */
+export function buildThumbnailFromParsed(parsed: ParsedLevel): HTMLCanvasElement {
+  const canvas = document.createElement("canvas");
+  canvas.width = MAP_WIDTH;
+  canvas.height = MAP_HEIGHT;
+  const ctx = canvas.getContext("2d")!;
+  const img = ctx.createImageData(MAP_WIDTH, MAP_HEIGHT);
+
+  const typeToColor: Record<string, [number, number, number]> = {
+    ground:           [55,  28,   0],
+    border:           [70,  70,  80],
+    sand_1:           [200, 160, 80],
+    sand_2:           [195, 155, 75],
+    sand_3:           [190, 150, 70],
+    sand_rock_1:      [175, 135, 62],
+    sand_rock_2:      [162, 122, 56],
+    rock_1:           [115,  92, 72],
+    rock_2:           [108,  87, 68],
+    rock_3:           [102,  82, 62],
+    rock_4:           [ 96,  76, 56],
+    solid_rock_1:     [ 58,  58, 68],
+    solid_rock_2:     [ 52,  52, 62],
+    solid_rock_3:     [ 48,  48, 60],
+    solid_rock_4:     [ 44,  44, 56],
+    rock_destroyed_1: [ 90,  72, 55],
+    rock_destroyed_2: [ 82,  65, 50],
+  };
+
+  for (let row = 0; row < MAP_HEIGHT; row++) {
+    for (let col = 0; col < MAP_WIDTH; col++) {
+      const type = parsed.detailMap[row][col].type;
+      const [r, g, b] = typeToColor[type] ?? [55, 28, 0];
+      const idx = (row * MAP_WIDTH + col) * 4;
+      img.data[idx] = r; img.data[idx + 1] = g; img.data[idx + 2] = b; img.data[idx + 3] = 255;
+    }
+  }
+
+  ctx.putImageData(img, 0, 0);
+  return canvas;
+}
+
 /** Returns a MAP_WIDTH × MAP_HEIGHT canvas (1 px per tile). Scale up with CSS. */
 export function buildThumbnail(data: Uint8Array): HTMLCanvasElement {
   const canvas = document.createElement("canvas");
@@ -471,37 +512,98 @@ export function generateRandomLevel(): ParsedLevel {
     detailMap[r][c] = { type, hp: TILE_MAX_HP[type] };
   };
 
-  // generate_random_stone: 29–39 stone chunks
+  // generate_random_stone: 29–39 stone chunks (mark terrain=true only, no tile type yet)
   const numChunks = randInt(29, 40);
+  const markStone = (r: number, c: number) => {
+    if (r < 1 || r >= MAP_HEIGHT - 1 || c < 1 || c >= MAP_WIDTH - 1) return;
+    terrain[r][c] = true;
+  };
   for (let i = 0; i < numChunks; i++) {
-    generateStoneChunk((r, c) => setTile(r, c, "rock_1", true));
+    generateStoneChunk(markStone);
   }
 
-  // finalize_map: assign visual stone variety based on distance from spawn corner
-  const sandTypes:  TerrainTileType[] = ["sand_1", "sand_2", "sand_3", "sand_rock_1", "sand_rock_2"];
-  const rockTypes:  TerrainTileType[] = ["rock_1", "rock_2", "rock_3", "rock_4"];
-  const solidTypes: TerrainTileType[] = ["solid_rock_1", "solid_rock_2", "solid_rock_3", "solid_rock_4"];
-  for (let r = 1; r < MAP_HEIGHT - 1; r++) {
+  // finalize_map — grid-based state: 0=passage 1=stone 2=corner-TL 3=corner-TR 4=corner-BR 5=corner-BL
+  const PASS=0, STONE=1, CTL=2, CTR=3, CBR=4, CBL=5;
+  const grid: number[][] = Array.from({ length: MAP_HEIGHT }, (_, r) =>
+    Array.from({ length: MAP_WIDTH }, (_, c) => terrain[r][c] ? STONE : PASS)
+  );
+  const get  = (r: number, c: number) => r>=0&&r<MAP_HEIGHT&&c>=0&&c<MAP_WIDTH ? grid[r][c] : STONE;
+  const isPass = (r: number, c: number) => get(r,c) === PASS;
+  const isS1   = (r: number, c: number) => get(r,c) === STONE;
+  const isSL   = (r: number, c: number) => get(r,c) >= STONE;
+
+  // Step 1: lonely stones → boulders
+  for (let r = 1; r < MAP_HEIGHT - 1; r++)
+    for (let c = 1; c < MAP_WIDTH - 1; c++)
+      if (isS1(r,c) && isPass(r,c+1) && isPass(r,c-1) && isPass(r-1,c) && isPass(r+1,c)) {
+        grid[r][c] = PASS;
+        entities.push({ col: c, row: r, kind: "boulder" });
+      }
+
+  // Step 2: passage tiles at stone corners → corner tiles
+  for (let r = 1; r < MAP_HEIGHT - 1; r++)
     for (let c = 1; c < MAP_WIDTH - 1; c++) {
-      if (!terrain[r][c]) continue;
-      const dist = Math.abs(c - 2) + Math.abs(r - 2);
-      let pool: TerrainTileType[];
-      if      (dist < 5)  pool = sandTypes;
-      else if (dist < 10) pool = [...sandTypes, ...rockTypes];
-      else if (dist < 16) pool = [...rockTypes, ...solidTypes];
-      else                pool = solidTypes;
-      const type = pool[randInt(0, pool.length)];
-      setTile(r, c, type, true);
+      if (!isPass(r,c)) continue;
+      if      (isS1(r,c+1)&&isS1(r+1,c)&&isPass(r,c-1)&&isPass(r-1,c)) grid[r][c] = CTL;
+      else if (isS1(r,c+1)&&isPass(r+1,c)&&isPass(r,c-1)&&isS1(r-1,c)) grid[r][c] = CBL;
+      else if (isPass(r,c+1)&&isS1(r+1,c)&&isS1(r,c-1)&&isPass(r-1,c)) grid[r][c] = CTR;
+      else if (isPass(r,c+1)&&isPass(r+1,c)&&isS1(r,c-1)&&isS1(r-1,c)) grid[r][c] = CBR;
     }
+
+  // Step 3: stone tiles at corners → corner tiles (isStoneLike for neighbours)
+  for (let r = 1; r < MAP_HEIGHT - 1; r++)
+    for (let c = 1; c < MAP_WIDTH - 1; c++) {
+      if (!isS1(r,c)) continue;
+      if      (isSL(r,c+1)&&isSL(r+1,c)&&isPass(r,c-1)&&isPass(r-1,c)) grid[r][c] = CTL;
+      else if (isSL(r,c+1)&&isPass(r+1,c)&&isPass(r,c-1)&&isSL(r-1,c)) grid[r][c] = CBL;
+      else if (isPass(r,c+1)&&isSL(r+1,c)&&isSL(r,c-1)&&isPass(r-1,c)) grid[r][c] = CTR;
+      else if (isPass(r,c+1)&&isPass(r+1,c)&&isSL(r,c-1)&&isSL(r-1,c)) grid[r][c] = CBR;
+    }
+
+  // Step 4: stone→solid_rock_1/2/3/4 | corner→rock_1/2/3/4 | passage→sand_1/2/3
+  const sandTypes:      TerrainTileType[] = ["sand_1","sand_2","sand_3"];
+  const solidRockTypes: TerrainTileType[] = ["solid_rock_1","solid_rock_2","solid_rock_3","solid_rock_4"];
+  const cornerTiles:    TerrainTileType[] = ["rock_1","rock_2","rock_3","rock_4"];
+  for (let r = 1; r < MAP_HEIGHT - 1; r++)
+    for (let c = 1; c < MAP_WIDTH - 1; c++) {
+      const g = grid[r][c];
+      if      (g === STONE) setTile(r, c, solidRockTypes[randInt(0, solidRockTypes.length)], true);
+      else if (g === PASS)  setTile(r, c, sandTypes[randInt(0, sandTypes.length)], true);
+      else                  setTile(r, c, cornerTiles[g - CTL], true);
+    }
+
+  // Step 5: 300 random sand tiles → gravel (sand_rock_1/2)
+  const gravelTypes: TerrainTileType[] = ["sand_rock_1","sand_rock_2"];
+  for (let i = 0; i < 300; i++) {
+    const r = randInt(1, MAP_HEIGHT - 1), c = randInt(1, MAP_WIDTH - 1);
+    const t = detailMap[r][c].type;
+    if (t === "sand_1" || t === "sand_2" || t === "sand_3")
+      setTile(r, c, gravelTypes[randInt(0, gravelTypes.length)], true);
   }
 
-  // generate_treasures: place 10 treasures; first 20 go into stone tiles, rest anywhere
-  const treasureTypes: TreasureType[] = ["bar", "bracelet", "cross", "crown", "diamond", "egg", "mushroom", "ring", "scepter", "shield"];
-  // Weighted toward lower-value items (mirrors typical distribution)
-  const treasureWeights = [3, 3, 3, 2, 1, 3, 3, 2, 2, 2];
+  // generate_treasures: matching Rust RANDOM_TREASURES list and weights
+  // Items: dig_power_1/2/3 (pickables), then gold treasures, then diamond
+  type PickableSubtype = "dig_power_1" | "dig_power_2" | "dig_power_3" | "random_weapon" | "medpac";
+  type RandItem = { kind: "treasure"; subtype: TreasureType } | { kind: "pickable"; subtype: PickableSubtype };
+  const randItems: RandItem[] = [
+    { kind: "pickable",  subtype: "dig_power_1" },  // SmallPickaxe  weight 18
+    { kind: "pickable",  subtype: "dig_power_2" },  // LargePickaxe  weight 12
+    { kind: "pickable",  subtype: "dig_power_3" },  // Drill         weight  8
+    { kind: "treasure",  subtype: "shield"      },  // GoldShield    weight 200
+    { kind: "treasure",  subtype: "egg"         },  // GoldEgg       weight 200
+    { kind: "treasure",  subtype: "ring"        },  // GoldPileCoins weight 200
+    { kind: "treasure",  subtype: "bracelet"    },  // GoldBracelet  weight 200
+    { kind: "treasure",  subtype: "bar"         },  // GoldBar       weight 200
+    { kind: "treasure",  subtype: "cross"       },  // GoldCross     weight 180
+    { kind: "treasure",  subtype: "scepter"     },  // GoldScepter   weight 160
+    { kind: "treasure",  subtype: "crown"       },  // GoldRubin     weight 140
+    { kind: "treasure",  subtype: "crown"       },  // GoldCrown     weight  80
+    { kind: "treasure",  subtype: "diamond"     },  // Diamond       weight   3
+  ];
+  const randItemWeights = [18, 12, 8, 200, 200, 200, 200, 200, 180, 160, 140, 80, 3];
   let treasuresInStone = 0;
-  for (let i = 0; i < 10; i++) {
-    const subtype = weightedPick(treasureTypes, treasureWeights);
+  for (let i = 0; i < 30; i++) {
+    const item = weightedPick(randItems, randItemWeights);
     if (treasuresInStone <= 20) {
       const stoneTiles: [number, number][] = [];
       for (let r = 1; r < MAP_HEIGHT - 1; r++)
@@ -511,11 +613,11 @@ export function generateRandomLevel(): ParsedLevel {
         const [r, c] = stoneTiles[randInt(0, stoneTiles.length)];
         terrain[r][c] = false;
         detailMap[r][c] = { type: "ground", hp: 0 };
-        entities.push({ col: c, row: r, kind: "treasure", subtype });
+        entities.push({ col: c, row: r, ...item });
         treasuresInStone++;
       }
     } else {
-      entities.push({ col: randInt(1, MAP_WIDTH - 1), row: randInt(1, MAP_HEIGHT - 1), kind: "treasure", subtype });
+      entities.push({ col: randInt(1, MAP_WIDTH - 1), row: randInt(1, MAP_HEIGHT - 1), ...item });
     }
   }
 
@@ -544,14 +646,15 @@ export function generateRandomLevel(): ParsedLevel {
     terrain[MAP_HEIGHT - 1][c] = true; detailMap[MAP_HEIGHT - 1][c] = { type: "border", hp: Infinity };
   }
 
-  // Clear spawn area so the player always has room
-  for (let r = 1; r <= 3; r++)
-    for (let c = 1; c <= 3; c++) {
-      terrain[r][c] = false;
-      detailMap[r][c] = { type: "ground", hp: 0 };
-    }
+  // generate_entrances: top-left only (1 player), arm length random 4–9
+  const clearTile = (r: number, c: number) => {
+    terrain[r][c] = false;
+    detailMap[r][c] = { type: "ground", hp: 0 };
+  };
+  for (let c = 1; c <= randInt(4, 10); c++) clearTile(1, c);
+  for (let r = 1; r <= randInt(4, 10); r++) clearTile(r, 1);
 
-  return { terrain, detailMap, entities, spawnCol: 2, spawnRow: 2 };
+  return { terrain, detailMap, entities, spawnCol: 1, spawnRow: 1 };
 }
 
 function weightedPick<T>(items: T[], weights: number[]): T {
