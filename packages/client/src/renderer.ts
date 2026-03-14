@@ -39,7 +39,7 @@ const HUD_BG = "#000000";
 const HUD_RULE = "#c8c800";
 const HUD_PANEL = "#1a1a1a";
 const HUD_BORDER = "#444444";
-const NAME_COLORS = ["#ff4040", "#4040ff", "#40c040", "#c0a000"];
+const NAME_COLORS = ["#4040ff", "#ff4040", "#40c040", "#c0a000"];
 
 export class Renderer {
   readonly canvas: HTMLCanvasElement;
@@ -701,9 +701,9 @@ export class Renderer {
     let frames: HTMLCanvasElement[];
     if (e.digging) {
       const cell = detailMap[e.digTileY]?.[e.digTileX];
-      frames = (cell && isHardDigTile(cell.type)) ? assets.dig[dirKey] : assets.walk[dirKey];
+      frames = (cell && isHardDigTile(cell.type)) ? assets.dig[0][dirKey] : assets.walk[0][dirKey];
     } else {
-      frames = assets.walk[dirKey];
+      frames = assets.walk[0][dirKey];
     }
     const frame = (e.moving || e.digging) ? frames[e.animFrame % frames.length] : frames[0];
     this.ctx.drawImage(frame, Math.round(e.x), Math.round(e.y) + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
@@ -719,6 +719,9 @@ export class Renderer {
 
     const dirKey = p.dir === 'none' ? 'down' : p.dir;
 
+    const playerWalk = assets.walk[p.color] ?? assets.walk[0];
+    const playerDig  = assets.dig[p.color]  ?? assets.dig[0];
+
     let frames: HTMLCanvasElement[];
     if (p.digging) {
       // Use digging animation for hard tiles, walk animation for soft tiles
@@ -726,12 +729,13 @@ export class Renderer {
       const drow = p.dir === 'down'  ? 1 : p.dir === 'up'   ? -1 : 0;
       const nc = p.tileX + dcol, nr = p.tileY + drow;
       const cell = detailMap[nr]?.[nc];
-      frames = (cell && isHardDigTile(cell.type)) ? assets.dig[dirKey] : assets.walk[dirKey];
+      frames = (cell && isHardDigTile(cell.type)) ? playerDig[dirKey] : playerWalk[dirKey];
     } else {
-      frames = assets.walk[dirKey];
+      frames = playerWalk[dirKey];
     }
 
+    const px = Math.round(p.x), py = Math.round(p.y) + HUD_HEIGHT;
     const frame = (p.moving || p.digging) ? frames[p.animFrame % frames.length] : frames[0];
-    this.ctx.drawImage(frame, Math.round(p.x), Math.round(p.y) + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+    this.ctx.drawImage(frame, px, py, TILE_SIZE, TILE_SIZE);
   }
 }

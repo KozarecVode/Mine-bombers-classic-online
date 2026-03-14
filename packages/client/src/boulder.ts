@@ -4,6 +4,7 @@ import { Terrain, isStone } from './terrain.js';
 // ── Types ─────────────────────────────────────────────────────────────────────
 
 export interface BoulderEntity {
+  id: number;
   tileX: number;
   tileY: number;
   grace: boolean;
@@ -18,13 +19,14 @@ const HB     = 12;
 
 export class BoulderManager {
   private boulders: BoulderEntity[] = [];
+  private nextId = 0;
 
   place(playerX: number, playerY: number, terrain: Terrain): void {
     const tileX = Math.round(playerX / TILE_SIZE);
     const tileY = Math.round(playerY / TILE_SIZE);
     if (isStone(terrain, tileX, tileY)) return;
     if (this.boulders.some(b => b.tileX === tileX && b.tileY === tileY)) return;
-    this.boulders.push({ tileX, tileY, grace: true });
+    this.boulders.push({ id: this.nextId++, tileX, tileY, grace: true });
   }
 
   update(playerX: number, playerY: number): void {

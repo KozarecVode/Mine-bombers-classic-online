@@ -15,9 +15,10 @@ export class DoorSwitchManager {
   private switchKeys = new Set<string>();
   private on = false;
 
-  // bump-activation state
+  // Per-frame hold tracking: fires on first touch, re-arms after all players leave
+  private heldThisFrame = new Set<string>();
+  private heldLastFrame = new Set<string>();
   private pending = false;
-  private lastBumpKey: string | null = null;
 
   place(playerX: number, playerY: number, terrain: Terrain): void {
     const col = Math.round(playerX / TILE_SIZE);
@@ -35,7 +36,11 @@ export class DoorSwitchManager {
     return this.on;
   }
 
-  // Called by main.ts after updatePlayer each frame
+  setOn(value: boolean): void {
+    this.on = value;
+  }
+
+  // Called by main.ts after all updatePlayer calls each frame
   consumePending(): boolean {
     if (!this.pending) return false;
     this.pending = false;
@@ -43,9 +48,10 @@ export class DoorSwitchManager {
     return true;
   }
 
-  // Call when the player moves to a new tile so the next bump re-triggers
-  resetBump(): void {
-    this.lastBumpKey = null;
+  // Call at end of frame (after all player movements) to advance hold state
+  endFrame(): void {
+    this.heldLastFrame = new Set(this.heldThisFrame);
+    this.heldThisFrame.clear();
   }
 
   hasSolidAt(col: number, row: number): boolean {
@@ -54,11 +60,14 @@ export class DoorSwitchManager {
 
   tryPush(col: number, row: number, _dc: number, _dr: number, _terrain: Terrain): boolean {
     const key = `${col},${row}`;
-    if (this.switchKeys.has(key) && this.lastBumpKey !== key) {
-      this.lastBumpKey = key;
-      this.pending = true;
+    if (this.switchKeys.has(key)) {
+      this.heldThisFrame.add(key);
+      if (!this.heldLastFrame.has(key)) {
+        this.pending = true; // first touch this contact — fire
+      }
+      return false; // always blocks
     }
-    return false; // always blocks — can't push a switch
+    return true;
   }
 
   getFireCells(): Set<string> {

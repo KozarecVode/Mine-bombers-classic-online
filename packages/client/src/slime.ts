@@ -1,4 +1,5 @@
 import { TILE_SIZE } from '@minebombers/shared';
+import type { NetMonster } from '@minebombers/shared';
 import { Terrain, isStone } from './terrain.js';
 import { Dir } from './game.js';
 
@@ -83,12 +84,15 @@ export class SlimeManager {
   update(
     terrain: Terrain,
     solidAt: (col: number, row: number) => boolean,
-    ptx: number,
-    pty: number,
+    allPlayers: { tileX: number; tileY: number }[],
     applyDig?: (col: number, row: number, digPower: number) => void,
   ): void {
     for (const s of this.slimes) {
       if (s.phase === 'dead') continue;
+      if (allPlayers.length === 0) continue;
+      const { tileX: ptx, tileY: pty } = allPlayers.reduce((a, b) =>
+        Math.max(Math.abs(b.tileX - s.tileX), Math.abs(b.tileY - s.tileY)) <
+        Math.max(Math.abs(a.tileX - s.tileX), Math.abs(a.tileY - s.tileY)) ? b : a);
       if (!s.activated) {
         if (Math.max(Math.abs(ptx - s.tileX), Math.abs(pty - s.tileY)) <= CHASE_RANGE) s.activated = true;
         else continue;
@@ -164,5 +168,19 @@ export class SlimeManager {
 
   getEntities(): SlimeEntity[] {
     return this.slimes;
+  }
+
+  applyNetState(monsters: NetMonster[]): void {
+    this.slimes = monsters.filter(m => m.kind === 'slime').map(m => ({
+      x: m.x, y: m.y,
+      tileX: m.tileX, tileY: m.tileY,
+      targetTileX: m.targetTileX, targetTileY: m.targetTileY,
+      dir: m.dir as Dir, moving: m.moving,
+      animFrame: m.animFrame, animTick: m.animTick,
+      phase: m.phase as SlimePhase,
+      activated: true, teleportCooldown: 0,
+      digging: m.digging, digTileX: m.digTileX, digTileY: m.digTileY,
+      hp: m.hp,
+    }));
   }
 }

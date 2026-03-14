@@ -25,6 +25,7 @@ export interface PickableEntity {
 export class PickableManager {
   private entities: PickableEntity[] = [];
   private nextId = 0;
+  lastRemovedIds: number[] = [];
 
   place(playerX: number, playerY: number, terrain: Terrain, type: PickableType): void {
     const col = Math.round(playerX / TILE_SIZE);
@@ -45,6 +46,7 @@ export class PickableManager {
       const e = this.entities[i];
       if (e.col === playerTileX && e.row === playerTileY) {
         collected.push(e.type);
+        this.lastRemovedIds.push(e.id);
       } else {
         this.entities[write++] = e;
       }
@@ -62,6 +64,8 @@ export class PickableManager {
       const e = this.entities[i];
       if (!occupied.has(`${e.col},${e.row}`)) {
         this.entities[write++] = e;
+      } else {
+        this.lastRemovedIds.push(e.id);
       }
     }
     this.entities.length = write;
@@ -73,9 +77,17 @@ export class PickableManager {
       const e = this.entities[i];
       if (!fireCells.has(`${e.col},${e.row}`)) {
         this.entities[write++] = e;
+      } else {
+        this.lastRemovedIds.push(e.id);
       }
     }
     this.entities.length = write;
+  }
+
+  removeById(ids: number[]): void {
+    if (ids.length === 0) return;
+    const set = new Set(ids);
+    this.entities = this.entities.filter(e => !set.has(e.id));
   }
 
   getEntities(): PickableEntity[] {

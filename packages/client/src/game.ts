@@ -33,9 +33,7 @@ export interface LocalPlayer {
 
 const ANIM_TICKS = 5;
 
-export function createLocalPlayer(name: string, color: number): LocalPlayer {
-  const startTileX = 2;
-  const startTileY = 2;
+export function createLocalPlayer(name: string, color: number, startTileX = 2, startTileY = 2): LocalPlayer {
   return {
     x: startTileX * TILE_SIZE,
     y: startTileY * TILE_SIZE,

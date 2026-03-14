@@ -1,49 +1,66 @@
 import { WebSocketServer, WebSocket } from 'ws';
-import { Room } from './room.js';
 
 const PORT = Number(process.env.PORT ?? 3001);
-
 const wss = new WebSocketServer({ port: PORT });
-const rooms = new Map<string, Room>();
 
-function findOrCreateRoom(): Room {
-  // Simple matchmaking: join the first non-full room, or create one
-  for (const room of rooms.values()) {
-    if (!room.isFull && room.state?.phase === 'lobby') {
-      return room;
-    }
+interface Conn { ws: WebSocket; playerId: number; }
+
+let nextId = 1;
+let hostId: number | null = null;
+const conns = new Map<number, Conn>();
+
+function broadcast(data: string, excludeId: number): void {
+  for (const [id, c] of conns) {
+    if (id !== excludeId && c.ws.readyState === WebSocket.OPEN) c.ws.send(data);
   }
-  const id = Math.random().toString(36).slice(2, 8);
-  const room = new Room(id);
-  rooms.set(id, room);
-  return room;
 }
 
-wss.on('connection', (ws: WebSocket, req) => {
-  const url = new URL(req.url ?? '/', `http://localhost`);
-  const name = url.searchParams.get('name') ?? 'Player';
-  const roomId = url.searchParams.get('room');
+wss.on('connection', (ws: WebSocket) => {
+  const playerId = nextId++;
+  const isHost = conns.size === 0;
+  if (isHost) hostId = playerId;
+  conns.set(playerId, { ws, playerId });
 
-  let room: Room;
-  if (roomId && rooms.has(roomId)) {
-    room = rooms.get(roomId)!;
-    if (room.isFull) {
-      ws.send(JSON.stringify({ type: 'error', message: 'Room is full' }));
-      ws.close();
-      return;
-    }
-  } else {
-    room = findOrCreateRoom();
+  // Tell the new player who they are
+  ws.send(JSON.stringify({ type: 'assign', playerId, isHost }));
+
+  // Notify the host so it can create a remote player object
+  if (!isHost && hostId !== null) {
+    conns.get(hostId)?.ws.send(JSON.stringify({ type: 'player_join', playerId }));
   }
 
-  room.addPlayer(ws, name);
+  ws.on('message', (data: Buffer) => {
+    const raw = data.toString();
+    if (playerId === hostId) {
+      // Host → relay to all clients as-is
+      broadcast(raw, hostId);
+    } else {
+      // Client → tag with sender id and forward to host
+      let msg: Record<string, unknown>;
+      try { msg = JSON.parse(raw); } catch { return; }
+      const hostConn = hostId !== null ? conns.get(hostId) : undefined;
+      if (hostConn?.ws.readyState === WebSocket.OPEN) {
+        hostConn.ws.send(JSON.stringify({ ...msg, fromPlayerId: playerId }));
+      }
+    }
+  });
 
-  // Clean up empty rooms
   ws.on('close', () => {
-    if (room.playerCount === 0) {
-      rooms.delete(room.id);
+    conns.delete(playerId);
+    broadcast(JSON.stringify({ type: 'player_leave', playerId }), playerId);
+
+    if (playerId === hostId) {
+      // Promote the next connected player as host
+      const next = conns.values().next().value as Conn | undefined;
+      if (next) {
+        hostId = next.playerId;
+        next.ws.send(JSON.stringify({ type: 'promoted_host' }));
+      } else {
+        hostId = null;
+        nextId = 1; // reset for a fresh session
+      }
     }
   });
 });
 
-console.log(`Minebombers server running on ws://localhost:${PORT}`);
+console.log(`Minebombers relay server on ws://localhost:${PORT}`);

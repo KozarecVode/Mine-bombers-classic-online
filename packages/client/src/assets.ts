@@ -1,12 +1,17 @@
+export interface PlayerAnim {
+  up:    HTMLCanvasElement[];
+  down:  HTMLCanvasElement[];
+  left:  HTMLCanvasElement[];
+  right: HTMLCanvasElement[];
+}
+
 export interface Assets {
   ground: HTMLImageElement;
   wall:   HTMLImageElement;
-  walk: {
-    up:    HTMLCanvasElement[];
-    down:  HTMLCanvasElement[];
-    left:  HTMLCanvasElement[];
-    right: HTMLCanvasElement[];
-  };
+  /** walk[0] = player 1, walk[1] = player 2, … */
+  walk: PlayerAnim[];
+  /** dig[0] = player 1, dig[1] = player 2, … */
+  dig:  PlayerAnim[];
   tnt: {
     fuse:      HTMLCanvasElement[]; // [tnt_1, tnt_2, tnt_10]
     disabled:  HTMLCanvasElement;
@@ -83,12 +88,6 @@ export interface Assets {
   playerDead:    HTMLCanvasElement;
   terrainTiles:  Record<string, HTMLCanvasElement>; // keyed by TerrainTileType
   tileBorders:   Record<string, HTMLCanvasElement>; // keyed by e.g. "sand_down", "solid_rock_burned_up"
-  dig: {
-    up:    HTMLCanvasElement[];
-    down:  HTMLCanvasElement[];
-    left:  HTMLCanvasElement[];
-    right: HTMLCanvasElement[];
-  };
 }
 
 function loadImage(src: string): Promise<HTMLImageElement> {
@@ -385,20 +384,71 @@ async function loadTileBorderAssets(): Promise<Record<string, HTMLCanvasElement>
   return result;
 }
 
-async function loadDigAnimation(): Promise<Assets['dig']> {
-  async function loadDigDir(dir: string, start: number): Promise<HTMLCanvasElement[]> {
+async function loadPlayerWalk(pNum: number): Promise<PlayerAnim> {
+  if (pNum === 1) {
+    const [up, down, left, right] = await Promise.all([
+      loadFrames('top',   'mb_mans_top_',  4),
+      loadFrames('down',  'mb_mans_down_', 4),
+      loadFrames('left',  'mb_mans_l_',    4),
+      loadFrames('right', 'mb_mans_r_',    4),
+    ]);
+    return { up, down, left, right };
+  }
+  // Players 2–4: tile_ROW_COL.png, loaded by explicit numeric index
+  const tileRow = ['0', '3', '4'][pNum - 2];
+  async function loadDir(folder: string, start: number): Promise<HTMLCanvasElement[]> {
     const imgs = await Promise.all(
       Array.from({ length: 4 }, (_, i) =>
-        loadImage(`/art/walk/player_1/digging/${dir}/tile_20_${start + i}.png`),
+        loadImage(`/art/walk/player_${pNum}/${folder}/tile_${tileRow}_${start + i}.png`),
       ),
     );
     return imgs.map(removeBg);
   }
   const [up, down, left, right] = await Promise.all([
-    loadDigDir('up', 24),
-    loadDigDir('down', 28),
-    loadDigDir('left', 20),
-    loadDigDir('right', 16),
+    loadDir('up',    24),
+    loadDir('down',  28),
+    loadDir('left',  20),
+    loadDir('right', 16),
+  ]);
+  return { up, down, left, right };
+}
+
+async function loadPlayerDig(pNum: number): Promise<PlayerAnim> {
+  if (pNum === 1) {
+    // Player 1: tile_20_N where N = right:16, left:20, up:24, down:28
+    async function loadDigDir(dir: string, start: number): Promise<HTMLCanvasElement[]> {
+      const imgs = await Promise.all(
+        Array.from({ length: 4 }, (_, i) =>
+          loadImage(`/art/walk/player_1/digging/${dir}/tile_20_${start + i}.png`),
+        ),
+      );
+      return imgs.map(removeBg);
+    }
+    const [up, down, left, right] = await Promise.all([
+      loadDigDir('up', 24), loadDigDir('down', 28),
+      loadDigDir('left', 20), loadDigDir('right', 16),
+    ]);
+    return { up, down, left, right };
+  }
+  // Player 2: tile_20_N, right:0, left:4, up:8, down:12
+  // Player 3: tile_21_N, right:0, left:4, up:8, down:12
+  // Player 4: tile_21_N, right:16, left:20, up:24, down:28
+  const digRow = pNum === 2 ? '20' : '21';
+  const starts = pNum === 4
+    ? { right: 16, left: 20, up: 24, down: 28 }
+    : { right: 0,  left: 4,  up: 8,  down: 12 };
+  async function loadDir(folder: string, start: number): Promise<HTMLCanvasElement[]> {
+    const imgs = await Promise.all(
+      Array.from({ length: 4 }, (_, i) =>
+        loadImage(`/art/walk/player_${pNum}/digging/${folder}/tile_${digRow}_${start + i}.png`),
+      ),
+    );
+    return imgs.map(removeBg);
+  }
+
+  const [up, down, left, right] = await Promise.all([
+    loadDir('up', starts.up), loadDir('down', starts.down),
+    loadDir('left', starts.left), loadDir('right', starts.right),
   ]);
   return { up, down, left, right };
 }
@@ -410,20 +460,16 @@ async function loadPickableAssets(): Promise<HTMLCanvasElement[]> {
 }
 
 export async function loadAssets(): Promise<Assets> {
-  const [ground, wall, up, down, left, right, explosion, slime, brown, grenadier, grey] = await Promise.all([
+  const [ground, wall, explosion, slime, brown, grenadier, grey] = await Promise.all([
     loadImage('/art/texture/world/ground.png'),
     loadImage('/art/texture/world/wall.png'),
-    loadFrames('top',   'mb_mans_top_',  4),
-    loadFrames('down',  'mb_mans_down_', 4),
-    loadFrames('left',  'mb_mans_l_',    4),
-    loadFrames('right', 'mb_mans_r_',    4),
     loadExplosionFrames(),
     loadSlimeAssets(),
     loadBrownAssets(),
     loadGrenadierAssets(),
     loadGreyAssets(),
   ]);
-  const [tnt, bigcross, smallcross, grenadeImg, smallbomb, bigbomb, landmineImg, flamebomb, sdImg, bdImg, u1Img, u2Img, p1Img, p2Img, n1Img, n2Img, n3Img, jbImg, lavaImg, teleportImg, barrelImg, diggerImg, boulderImg, door, swOffImg, swOnImg, treasure, pickable, terrainTiles, tileBorders, dig, playerDeadImg] = await Promise.all([
+  const [tnt, bigcross, smallcross, grenadeImg, smallbomb, bigbomb, landmineImg, flamebomb, sdImg, bdImg, u1Img, u2Img, p1Img, p2Img, n1Img, n2Img, n3Img, jbImg, lavaImg, teleportImg, barrelImg, diggerImg, boulderImg, door, swOffImg, swOnImg, treasure, pickable, terrainTiles, tileBorders, playerDeadImg, w1, w2, w3, w4, d1, d2, d3, d4] = await Promise.all([
     loadTntAssets(explosion),
     loadBigCrossAssets(explosion),
     loadSmallCrossAssets(explosion),
@@ -454,8 +500,9 @@ export async function loadAssets(): Promise<Assets> {
     loadPickableAssets(),
     loadTerrainTileAssets(),
     loadTileBorderAssets(),
-    loadDigAnimation(),
     loadImage('/art/texture/world/dead.png'),
+    loadPlayerWalk(1), loadPlayerWalk(2), loadPlayerWalk(3), loadPlayerWalk(4),
+    loadPlayerDig(1),  loadPlayerDig(2),  loadPlayerDig(3),  loadPlayerDig(4),
   ]);
   const grenade       = removeBg(grenadeImg);
   const landmine      = removeBg(landmineImg);
@@ -472,5 +519,7 @@ export async function loadAssets(): Promise<Assets> {
   const boulder       = removeBg(boulderImg);
   const doorswitch    = { off: toCanvas(swOffImg), on: toCanvas(swOnImg) };
   const playerDead = toCanvas(playerDeadImg);
-  return { ground, wall, walk: { up, down, left, right }, tnt, bigcross, smallcross, grenade, smallbomb, bigbomb, landmine, flamebomb, smalldetonate, bigdetonate, urethane, plastic, nuclear, jumpingbomb, lava, teleport, barrel, diggerbomb, boulder, slime, brown, grenadier, grey, door, doorswitch, treasure, pickable, playerDead, terrainTiles, tileBorders, dig };
+  const walk = [w1, w2, w3, w4];
+  const dig  = [d1, d2, d3, d4];
+  return { ground, wall, walk, dig, tnt, bigcross, smallcross, grenade, smallbomb, bigbomb, landmine, flamebomb, smalldetonate, bigdetonate, urethane, plastic, nuclear, jumpingbomb, lava, teleport, barrel, diggerbomb, boulder, slime, brown, grenadier, grey, door, doorswitch, treasure, pickable, playerDead, terrainTiles, tileBorders };
 }

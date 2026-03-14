@@ -197,6 +197,19 @@ export class TntManager {
     }
   }
 
+  /** Force a TNT entity into a specific phase (used for host→client sync). */
+  forcePhase(id: number, newPhase: TntPhase, terrain: Terrain): void {
+    const e = this.entities.find(e => e.id === id);
+    if (!e || e.phase === newPhase) return;
+    if (newPhase === 'disabled') {
+      e.phase = 'disabled';
+    } else if (newPhase === 'exploding') {
+      e.phase = 'exploding';
+      e.tick = 0;
+      this.applyExplosion(e, terrain);
+    }
+  }
+
   getEntities(): TntEntity[] {
     return this.entities;
   }

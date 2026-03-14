@@ -33,6 +33,7 @@ export interface TreasureEntity {
 export class TreasureManager {
   private entities: TreasureEntity[] = [];
   private nextId = 0;
+  lastRemovedIds: number[] = [];
 
   place(playerX: number, playerY: number, terrain: Terrain, type?: TreasureType): void {
     const col = Math.round(playerX / TILE_SIZE);
@@ -54,6 +55,7 @@ export class TreasureManager {
       const e = this.entities[i];
       if (e.col === playerTileX && e.row === playerTileY) {
         gained += e.value;
+        this.lastRemovedIds.push(e.id);
       } else {
         this.entities[write++] = e;
       }
@@ -69,7 +71,7 @@ export class TreasureManager {
     let write = 0;
     for (let i = 0; i < this.entities.length; i++) {
       const e = this.entities[i];
-      if (e.col === col && e.row === row) { gained += e.value; }
+      if (e.col === col && e.row === row) { gained += e.value; this.lastRemovedIds.push(e.id); }
       else { this.entities[write++] = e; }
     }
     this.entities.length = write;
@@ -86,9 +88,17 @@ export class TreasureManager {
       const e = this.entities[i];
       if (!fireCells.has(`${e.col},${e.row}`)) {
         this.entities[write++] = e;
+      } else {
+        this.lastRemovedIds.push(e.id);
       }
     }
     this.entities.length = write;
+  }
+
+  removeById(ids: number[]): void {
+    if (ids.length === 0) return;
+    const set = new Set(ids);
+    this.entities = this.entities.filter(e => !set.has(e.id));
   }
 
   getEntities(): TreasureEntity[] {

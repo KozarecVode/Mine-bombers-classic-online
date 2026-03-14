@@ -77,10 +77,10 @@
       padding: 0.4rem 1rem;
       font-size: 1rem;
       font-family: inherit;
-      width: 180px;
       text-align: center;
       border-radius: 2px;
     }
+    #nameInput { width: 180px; }
     button {
       background: #ffdd00;
       color: #111;
@@ -93,7 +93,42 @@
       cursor: pointer;
       border-radius: 2px;
     }
-    button:hover { background: #ffe844; }
+    button:hover:not(:disabled) { background: #ffe844; }
+    button:disabled { background: #555; color: #333; cursor: default; }
+
+    #waitingMsg {
+      display: none;
+      font-size: 0.8rem;
+      color: #aaa;
+      letter-spacing: 1px;
+      text-align: center;
+    }
+
+    #playerList {
+      display: flex;
+      flex-direction: column;
+      gap: 4px;
+      min-width: 200px;
+      min-height: 1.4em;
+    }
+    .lobbyPlayer {
+      display: flex;
+      align-items: center;
+      gap: 8px;
+      font-size: 0.85rem;
+      letter-spacing: 1px;
+    }
+    .playerDot {
+      width: 10px;
+      height: 10px;
+      border-radius: 50%;
+      flex-shrink: 0;
+    }
+    .youTag {
+      font-size: 0.65rem;
+      color: #555;
+      letter-spacing: 1px;
+    }
 
     #game { display: none; flex-direction: column; align-items: center; gap: 6px; }
     canvas {
@@ -121,8 +156,10 @@
       <div id="levelGrid"></div>
     </div>
     <div id="levelStatus"></div>
+    <div id="playerList"></div>
     <input id="nameInput" type="text" placeholder="Enter name" maxlength="12" value="Player" />
-    <button id="joinBtn">PLAY</button>
+    <div id="waitingMsg"></div>
+    <button id="joinBtn" disabled>PLAY</button>
     <div id="status" style="font-size:0.8rem;color:#aaa;min-height:1.2em;"></div>
   </div>
 

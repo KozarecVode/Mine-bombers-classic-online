@@ -1,4 +1,5 @@
 import { TILE_SIZE } from '@minebombers/shared';
+import type { NetMonster } from '@minebombers/shared';
 import { Terrain, isStone } from './terrain.js';
 import { Dir } from './game.js';
 
@@ -82,12 +83,15 @@ export class GreyManager {
   update(
     terrain: Terrain,
     solidAt: (col: number, row: number) => boolean,
-    ptx: number,
-    pty: number,
+    allPlayers: { tileX: number; tileY: number }[],
     applyDig?: (col: number, row: number, digPower: number) => void,
   ): void {
     for (const g of this.greys) {
       if (g.phase === 'dead') continue;
+      if (allPlayers.length === 0) continue;
+      const { tileX: ptx, tileY: pty } = allPlayers.reduce((a, p) =>
+        Math.max(Math.abs(p.tileX - g.tileX), Math.abs(p.tileY - g.tileY)) <
+        Math.max(Math.abs(a.tileX - g.tileX), Math.abs(a.tileY - g.tileY)) ? p : a);
       if (!g.activated) {
         if (Math.max(Math.abs(ptx - g.tileX), Math.abs(pty - g.tileY)) <= CHASE_RANGE) g.activated = true;
         else continue;
@@ -161,5 +165,18 @@ export class GreyManager {
 
   getEntities(): GreyEntity[] {
     return this.greys;
+  }
+
+  applyNetState(monsters: NetMonster[]): void {
+    this.greys = monsters.filter(m => m.kind === 'grey').map(m => ({
+      x: m.x, y: m.y,
+      tileX: m.tileX, tileY: m.tileY,
+      targetTileX: m.targetTileX, targetTileY: m.targetTileY,
+      dir: m.dir as Dir, moving: m.moving,
+      animFrame: m.animFrame, animTick: m.animTick,
+      phase: m.phase as GreyPhase,
+      activated: true, teleportCooldown: 0,
+      digging: m.digging, digTileX: m.digTileX, digTileY: m.digTileY,
+    }));
   }
 }

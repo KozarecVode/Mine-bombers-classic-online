@@ -1,4 +1,5 @@
 import { TILE_SIZE } from "@minebombers/shared";
+import type { NetMonster } from "@minebombers/shared";
 import { Terrain, isStone } from "./terrain.js";
 import { Dir } from "./game.js";
 import { GrenadeManager } from "./grenade.js";
@@ -93,19 +94,27 @@ export class GrenadierManager {
   update(
     terrain: Terrain,
     solidAt: (col: number, row: number) => boolean,
-    playerTileX: number,
-    playerTileY: number,
+    allPlayers: { tileX: number; tileY: number }[],
     grenadeMgr: GrenadeManager,
     applyDig?: (col: number, row: number, digPower: number) => void,
   ): void {
     for (const e of this.entities) {
       if (e.phase === "dead") continue;
+      if (allPlayers.length === 0) continue;
+      const { tileX: playerTileX, tileY: playerTileY } = allPlayers.reduce((a, p) =>
+        Math.max(Math.abs(p.tileX - e.tileX), Math.abs(p.tileY - e.tileY)) <
+        Math.max(Math.abs(a.tileX - e.tileX), Math.abs(a.tileY - e.tileY)) ? p : a);
       if (!e.activated) {
         if (Math.max(Math.abs(playerTileX - e.tileX), Math.abs(playerTileY - e.tileY)) <= CHASE_RANGE) e.activated = true;
         else continue;
       }
 
-      const losDir = this.checkLOS(e, terrain, playerTileX, playerTileY);
+      // Check LOS against all players, shoot at first visible one
+      let losDir: Dir | null = null;
+      for (const p of allPlayers) {
+        losDir = this.checkLOS(e, terrain, p.tileX, p.tileY);
+        if (losDir) break;
+      }
 
       if (losDir) {
         // Face the player, stop moving/digging, tick throw cooldown
@@ -229,5 +238,20 @@ export class GrenadierManager {
 
   getEntities(): GrenadierEntity[] {
     return this.entities;
+  }
+
+  applyNetState(monsters: NetMonster[]): void {
+    this.entities = monsters.filter(m => m.kind === 'grenadier').map(m => ({
+      x: m.x, y: m.y,
+      tileX: m.tileX, tileY: m.tileY,
+      targetTileX: m.targetTileX, targetTileY: m.targetTileY,
+      dir: m.dir as Dir, moving: m.moving,
+      animFrame: m.animFrame, animTick: m.animTick,
+      phase: m.phase as GrenadierPhase,
+      activated: true, teleportCooldown: 0,
+      throwCooldown: 0, shooting: m.shooting ?? false,
+      digging: m.digging, digTileX: m.digTileX, digTileY: m.digTileY,
+      hp: m.hp,
+    }));
   }
 }

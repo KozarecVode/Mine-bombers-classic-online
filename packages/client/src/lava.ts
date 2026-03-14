@@ -150,4 +150,12 @@ export class LavaManager {
   chainDetonate(_fireCells: Set<string>, _terrain: Terrain): void {}
 
   getEntities(): LavaEntity[] { return this.entities; }
+
+  /** Replace lava state from host snapshot (clients only). */
+  applyNetState(lava: Array<{ id: number; cells: [number, number][] }>): void {
+    this.entities = lava.map(ld => {
+      const cells = new Set(ld.cells.map(([c, r]) => key(c, r)));
+      return { id: ld.id, cellList: ld.cells.slice() as [number, number][], cells, timers: new Map() };
+    });
+  }
 }

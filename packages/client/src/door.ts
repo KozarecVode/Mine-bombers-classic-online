@@ -35,6 +35,10 @@ export class DoorManager {
     return this.open;
   }
 
+  setOpen(value: boolean): void {
+    this.open = value;
+  }
+
   hasSolidAt(col: number, row: number): boolean {
     return !this.open && this.doorKeys.has(`${col},${row}`);
   }
