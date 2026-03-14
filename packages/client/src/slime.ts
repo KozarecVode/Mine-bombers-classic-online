@@ -15,18 +15,6 @@ const DIRS: Dir[] = ['up', 'down', 'left', 'right'];
 function dc(dir: Dir) { return dir === 'right' ? 1 : dir === 'left' ? -1 : 0; }
 function dr(dir: Dir) { return dir === 'down'  ? 1 : dir === 'up'   ? -1 : 0; }
 
-function chaseDirections(ex: number, ey: number, px: number, py: number): Dir[] {
-  const dx = px - ex, dy = py - ey;
-  const result: Dir[] = [];
-  if (Math.abs(dx) >= Math.abs(dy)) {
-    if (dx > 0) result.push('right'); else if (dx < 0) result.push('left');
-    if (dy > 0) result.push('down');  else if (dy < 0) result.push('up');
-  } else {
-    if (dy > 0) result.push('down');  else if (dy < 0) result.push('up');
-    if (dx > 0) result.push('right'); else if (dx < 0) result.push('left');
-  }
-  return result;
-}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -49,6 +37,7 @@ export interface SlimeEntity {
   digging: boolean;
   digTileX: number;
   digTileY: number;
+  hp: number;
 }
 
 // ── Manager ───────────────────────────────────────────────────────────────────
@@ -79,16 +68,15 @@ export class SlimeManager {
       digging: false,
       digTileX: 0,
       digTileY: 0,
+      hp: 10,
     });
   }
 
   applyFire(fireCells: Set<string>): void {
     for (const s of this.slimes) {
-      if (s.phase === 'alive' && fireCells.has(`${s.tileX},${s.tileY}`)) {
-        s.phase = 'dead';
-        s.moving = false;
-        s.digging = false;
-      }
+      if (s.phase !== 'alive' || !fireCells.has(`${s.tileX},${s.tileY}`)) continue;
+      s.hp--;
+      if (s.hp <= 0) { s.phase = 'dead'; s.moving = false; s.digging = false; }
     }
   }
 
@@ -101,6 +89,10 @@ export class SlimeManager {
   ): void {
     for (const s of this.slimes) {
       if (s.phase === 'dead') continue;
+      if (!s.activated) {
+        if (Math.max(Math.abs(ptx - s.tileX), Math.abs(pty - s.tileY)) <= CHASE_RANGE) s.activated = true;
+        else continue;
+      }
 
       if (s.digging) {
         if (!isStone(terrain, s.digTileX, s.digTileY)) {
@@ -152,29 +144,8 @@ export class SlimeManager {
     return !isStone(terrain, nc, nr) && !solidAt(nc, nr);
   }
 
-  private startMove(s: SlimeEntity, terrain: Terrain, solidAt: (col: number, row: number) => boolean, ptx: number, pty: number, canDig: boolean): void {
-    const dist = Math.max(Math.abs(ptx - s.tileX), Math.abs(pty - s.tileY));
-    if (dist <= CHASE_RANGE) {
-      const dirs = chaseDirections(s.tileX, s.tileY, ptx, pty);
-      for (const dir of dirs) {
-        if (this.canMove(s, dir, terrain, solidAt)) {
-          s.dir = dir;
-          s.targetTileX = s.tileX + dc(dir);
-          s.targetTileY = s.tileY + dr(dir);
-          s.moving = true;
-          return;
-        }
-      }
-      if (canDig) {
-        for (const dir of dirs) {
-          const nc = s.tileX + dc(dir), nr = s.tileY + dr(dir);
-          if (isStone(terrain, nc, nr) && !solidAt(nc, nr)) {
-            s.dir = dir; s.digTileX = nc; s.digTileY = nr; s.digging = true; return;
-          }
-        }
-      }
-    }
-    // Fallback: patrol randomly when chase is blocked (prefer not to reverse)
+  private startMove(s: SlimeEntity, terrain: Terrain, solidAt: (col: number, row: number) => boolean, _ptx: number, _pty: number, _canDig: boolean): void {
+    // Patrol randomly (prefer not to reverse)
     const reverseS: Dir = s.dir === 'up' ? 'down' : s.dir === 'down' ? 'up' : s.dir === 'left' ? 'right' : 'left';
     if (Math.random() < TURN_CHANCE || !this.canMove(s, s.dir, terrain, solidAt)) {
       const available = DIRS.filter(d => this.canMove(s, d, terrain, solidAt));

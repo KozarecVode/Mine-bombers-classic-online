@@ -234,6 +234,36 @@ export class Renderer {
         }
       }
     }
+    // Border overlays: draw directional borders on sand/solid_rock tiles adjacent to ground
+    const borderDirs = [
+      { dc: 0, dr: -1, dir: 'up' },
+      { dc: 0, dr:  1, dir: 'down' },
+      { dc: -1, dr: 0, dir: 'left' },
+      { dc:  1, dr: 0, dir: 'right' },
+    ];
+    for (let row = 0; row < MAP_HEIGHT; row++) {
+      for (let col = 0; col < MAP_WIDTH; col++) {
+        const { type } = detailMap[row][col];
+        const base = type.startsWith('solid_rock') ? 'solid_rock'
+                   : type.startsWith('sand')        ? 'sand'
+                   : null;
+        if (!base) continue;
+        const x = col * TILE_SIZE, y = row * TILE_SIZE;
+        for (const { dc, dr, dir } of borderDirs) {
+          const nr = row + dr, nc = col + dc;
+          if (nr < 0 || nr >= MAP_HEIGHT || nc < 0 || nc >= MAP_WIDTH) continue;
+          const neighbor = detailMap[nr][nc];
+          if (neighbor.type !== 'ground') continue;
+          const key = neighbor.burnedGround ? `${base}_burned_${dir}` : `${base}_${dir}`;
+          const sprite = assets.tileBorders[key];
+          if (!sprite) continue;
+          // Draw at natural size, aligned to the correct edge
+          const bx = dir === 'right' ? x + TILE_SIZE - sprite.width  : x;
+          const by = dir === 'down'  ? y + TILE_SIZE - sprite.height : y;
+          octx.drawImage(sprite, bx, by);
+        }
+      }
+    }
     return oc;
   }
 
@@ -682,6 +712,11 @@ export class Renderer {
   // ── Player ─────────────────────────────────────────────────────────────────
 
   private drawPlayer(assets: Assets, p: LocalPlayer, detailMap: TerrainDetailMap): void {
+    if (p.dead) {
+      this.ctx.drawImage(assets.playerDead, Math.round(p.x), Math.round(p.y) + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+      return;
+    }
+
     const dirKey = p.dir === 'none' ? 'down' : p.dir;
 
     let frames: HTMLCanvasElement[];

@@ -22,24 +22,9 @@ const FUSE_FRAME_TICKS      = 4;      // swap fuse sprite every 4 ticks
 const EXPLODE_FRAME_COUNT   = 11;
 const EXPLODE_TICKS_PER_FRAME = 1;
 const CHAIN_FRAME_CUTOFF    = 6;
+const MAX_NAPALM_TILES      = 80;
 
-// ── Pattern ───────────────────────────────────────────────────────────────────
-//
-//  Diamond: centre row is 15 tiles wide, each row up/down shrinks by 2.
-//  7 rows above and 7 rows below the centre.
-//
-//  dy=0:  width 15 (dx -7..+7)
-//  dy=±1: width 13 (dx -6..+6)
-//  ...
-//  dy=±7: width  1 (dx  0.. 0)
-
-const FLAME_BOMB_PATTERN: [number, number][] = [];
-for (let dy = -7; dy <= 7; dy++) {
-  const halfWidth = 7 - Math.abs(dy);
-  for (let dx = -halfWidth; dx <= halfWidth; dx++) {
-    FLAME_BOMB_PATTERN.push([dx, dy]);
-  }
-}
+const SPREAD_DIRS: [number, number][] = [[1,0],[-1,0],[0,1],[0,-1]];
 
 // ── Manager ──────────────────────────────────────────────────────────────────
 
@@ -68,7 +53,7 @@ export class FlameBombManager {
     this.entities.push({ id: this.nextId++, tileX, tileY, phase: 'fusing', tick: 0, grace: true, cells: [] });
   }
 
-  update(playerX: number, playerY: number, terrain: Terrain): void {
+  update(playerX: number, playerY: number, terrain: Terrain, blockedAt: (c: number, r: number) => boolean = () => false): void {
     const { MARGIN, HB } = FlameBombManager;
     const pl = playerX + MARGIN, pr = playerX + MARGIN + HB;
     const pt = playerY + MARGIN, pb = playerY + MARGIN + HB;
@@ -81,20 +66,20 @@ export class FlameBombManager {
         if (!overlaps) e.grace = false;
       }
       if (e.phase === 'fusing' && e.tick >= FUSE_TICKS) {
-        this.triggerExplosion(e, terrain);
+        this.triggerExplosion(e, terrain, blockedAt);
       } else if (e.phase === 'exploding' && e.tick >= EXPLODE_TICKS_PER_FRAME * EXPLODE_FRAME_COUNT) {
         e.phase = 'done';
       }
     }
 
-    this.chainDetonate(this.getFireCells(), terrain);
+    this.chainDetonate(this.getFireCells(), terrain, blockedAt);
     this.entities = this.entities.filter(e => e.phase !== 'done');
   }
 
-  chainDetonate(cells: Set<string>, terrain: Terrain): void {
+  chainDetonate(cells: Set<string>, terrain: Terrain, blockedAt: (c: number, r: number) => boolean = () => false): void {
     for (const e of this.entities) {
       if ((e.phase === 'fusing' || e.phase === 'disabled') && cells.has(`${e.tileX},${e.tileY}`)) {
-        this.triggerExplosion(e, terrain);
+        this.triggerExplosion(e, terrain, blockedAt);
       }
     }
   }
@@ -117,18 +102,32 @@ export class FlameBombManager {
     return cells;
   }
 
-  private triggerExplosion(e: FlameBombEntity, terrain: Terrain): void {
+  private triggerExplosion(e: FlameBombEntity, terrain: Terrain, blockedAt: (c: number, r: number) => boolean): void {
     e.phase = 'exploding';
     e.tick = 0;
     const rows = terrain.length, cols = terrain[0].length;
-    const visual: [number, number][] = [];
-    for (const [dx, dy] of FLAME_BOMB_PATTERN) {
-      const col = e.tileX + dx, row = e.tileY + dy;
-      if (row < 0 || row >= rows || col < 0 || col >= cols) continue;
-      if (row === 0 || row === rows - 1 || col === 0 || col === cols - 1) continue;
-      visual.push([col, row]);
+
+    // BFS flood-fill through passable tiles (napalm flows through open space)
+    const visited = new Set<string>([`${e.tileX},${e.tileY}`]);
+    const queue: [number, number][] = [[e.tileX, e.tileY]];
+    const cells: [number, number][] = [[e.tileX, e.tileY]];
+
+    outer: while (queue.length > 0) {
+      const [c, r] = queue.shift()!;
+      for (const [dc, dr] of SPREAD_DIRS) {
+        const nc = c + dc, nr = r + dr;
+        if (nr <= 0 || nr >= rows - 1 || nc <= 0 || nc >= cols - 1) continue;
+        const key = `${nc},${nr}`;
+        if (visited.has(key)) continue;
+        visited.add(key);
+        if (isStone(terrain, nc, nr) || blockedAt(nc, nr)) continue;
+        cells.push([nc, nr]);
+        if (cells.length >= MAX_NAPALM_TILES) break outer;
+        queue.push([nc, nr]);
+      }
     }
-    e.cells = visual;
+
+    e.cells = cells;
   }
 
   fuseFrame(e: FlameBombEntity): number {

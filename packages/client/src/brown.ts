@@ -15,18 +15,6 @@ const DIRS: Dir[] = ['up', 'down', 'left', 'right'];
 function dc(dir: Dir) { return dir === 'right' ? 1 : dir === 'left' ? -1 : 0; }
 function dr(dir: Dir) { return dir === 'down'  ? 1 : dir === 'up'   ? -1 : 0; }
 
-function chaseDirections(ex: number, ey: number, px: number, py: number): Dir[] {
-  const dx = px - ex, dy = py - ey;
-  const result: Dir[] = [];
-  if (Math.abs(dx) >= Math.abs(dy)) {
-    if (dx > 0) result.push('right'); else if (dx < 0) result.push('left');
-    if (dy > 0) result.push('down');  else if (dy < 0) result.push('up');
-  } else {
-    if (dy > 0) result.push('down');  else if (dy < 0) result.push('up');
-    if (dx > 0) result.push('right'); else if (dx < 0) result.push('left');
-  }
-  return result;
-}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -79,16 +67,15 @@ export class BrownManager {
       digging: false,
       digTileX: 0,
       digTileY: 0,
+      hp: 29,
     });
   }
 
   applyFire(fireCells: Set<string>): void {
     for (const b of this.browns) {
-      if (b.phase === 'alive' && fireCells.has(`${b.tileX},${b.tileY}`)) {
-        b.phase = 'dead';
-        b.moving = false;
-        b.digging = false;
-      }
+      if (b.phase !== 'alive' || !fireCells.has(`${b.tileX},${b.tileY}`)) continue;
+      b.hp--;
+      if (b.hp <= 0) { b.phase = 'dead'; b.moving = false; b.digging = false; }
     }
   }
 
@@ -101,6 +88,10 @@ export class BrownManager {
   ): void {
     for (const b of this.browns) {
       if (b.phase === 'dead') continue;
+      if (!b.activated) {
+        if (Math.max(Math.abs(ptx - b.tileX), Math.abs(pty - b.tileY)) <= CHASE_RANGE) b.activated = true;
+        else continue;
+      }
 
       if (b.digging) {
         if (!isStone(terrain, b.digTileX, b.digTileY)) {
@@ -150,29 +141,8 @@ export class BrownManager {
     return !isStone(terrain, nc, nr) && !solidAt(nc, nr);
   }
 
-  private startMove(b: BrownEntity, terrain: Terrain, solidAt: (col: number, row: number) => boolean, ptx: number, pty: number, canDig: boolean): void {
-    const dist = Math.max(Math.abs(ptx - b.tileX), Math.abs(pty - b.tileY));
-    if (dist <= CHASE_RANGE) {
-      const dirs = chaseDirections(b.tileX, b.tileY, ptx, pty);
-      for (const dir of dirs) {
-        if (this.canMove(b, dir, terrain, solidAt)) {
-          b.dir = dir;
-          b.targetTileX = b.tileX + dc(dir);
-          b.targetTileY = b.tileY + dr(dir);
-          b.moving = true;
-          return;
-        }
-      }
-      if (canDig) {
-        for (const dir of dirs) {
-          const nc = b.tileX + dc(dir), nr = b.tileY + dr(dir);
-          if (isStone(terrain, nc, nr) && !solidAt(nc, nr)) {
-            b.dir = dir; b.digTileX = nc; b.digTileY = nr; b.digging = true; return;
-          }
-        }
-      }
-    }
-    // Fallback: patrol randomly when chase is blocked (prefer not to reverse)
+  private startMove(b: BrownEntity, terrain: Terrain, solidAt: (col: number, row: number) => boolean, _ptx: number, _pty: number, _canDig: boolean): void {
+    // Patrol randomly (prefer not to reverse)
     const reverseB: Dir = b.dir === 'up' ? 'down' : b.dir === 'down' ? 'up' : b.dir === 'left' ? 'right' : 'left';
     if (Math.random() < TURN_CHANCE || !this.canMove(b, b.dir, terrain, solidAt)) {
       const available = DIRS.filter(d => this.canMove(b, d, terrain, solidAt));

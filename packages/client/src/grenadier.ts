@@ -21,23 +21,6 @@ function drf(dir: Dir) {
   return dir === "down" ? 1 : dir === "up" ? -1 : 0;
 }
 
-function chaseDirections(ex: number, ey: number, px: number, py: number): Dir[] {
-  const dx = px - ex,
-    dy = py - ey;
-  const result: Dir[] = [];
-  if (Math.abs(dx) >= Math.abs(dy)) {
-    if (dx > 0) result.push("right");
-    else if (dx < 0) result.push("left");
-    if (dy > 0) result.push("down");
-    else if (dy < 0) result.push("up");
-  } else {
-    if (dy > 0) result.push("down");
-    else if (dy < 0) result.push("up");
-    if (dx > 0) result.push("right");
-    else if (dx < 0) result.push("left");
-  }
-  return result;
-}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -62,6 +45,7 @@ export interface GrenadierEntity {
   digging: boolean;
   digTileX: number;
   digTileY: number;
+  hp: number;
 }
 
 // ── Manager ───────────────────────────────────────────────────────────────────
@@ -94,17 +78,15 @@ export class GrenadierManager {
       digging: false,
       digTileX: 0,
       digTileY: 0,
+      hp: 29,
     });
   }
 
   applyFire(fireCells: Set<string>): void {
     for (const e of this.entities) {
-      if (e.phase === "alive" && fireCells.has(`${e.tileX},${e.tileY}`)) {
-        e.phase = "dead";
-        e.moving = false;
-        e.shooting = false;
-        e.digging = false;
-      }
+      if (e.phase !== "alive" || !fireCells.has(`${e.tileX},${e.tileY}`)) continue;
+      e.hp--;
+      if (e.hp <= 0) { e.phase = "dead"; e.moving = false; e.shooting = false; e.digging = false; }
     }
   }
 
@@ -225,41 +207,20 @@ export class GrenadierManager {
     return !isStone(terrain, nc, nr) && !solidAt(nc, nr);
   }
 
-  private startMove(e: GrenadierEntity, terrain: Terrain, solidAt: (col: number, row: number) => boolean, ptx: number, pty: number, canDig: boolean): void {
-    const dist = Math.max(Math.abs(ptx - e.tileX), Math.abs(pty - e.tileY));
-    if (dist <= CHASE_RANGE) {
-      const dirs = chaseDirections(e.tileX, e.tileY, ptx, pty);
-      for (const dir of dirs) {
-        if (this.canMove(e, dir, terrain, solidAt)) {
-          e.dir = dir;
-          e.targetTileX = e.tileX + dcf(dir);
-          e.targetTileY = e.tileY + drf(dir);
-          e.moving = true;
-          return;
-        }
-      }
-      if (canDig) {
-        for (const dir of dirs) {
-          const nc = e.tileX + dcf(dir), nr = e.tileY + drf(dir);
-          if (isStone(terrain, nc, nr) && !solidAt(nc, nr)) {
-            e.dir = dir; e.digTileX = nc; e.digTileY = nr; e.digging = true; return;
-          }
-        }
-      }
-    } else {
-      const reverseE: Dir = e.dir === 'up' ? 'down' : e.dir === 'down' ? 'up' : e.dir === 'left' ? 'right' : 'left';
-      if (Math.random() < TURN_CHANCE || !this.canMove(e, e.dir, terrain, solidAt)) {
-        const available = DIRS.filter(d => this.canMove(e, d, terrain, solidAt));
-        const preferred = available.filter(d => d !== reverseE);
-        const choices = preferred.length > 0 ? preferred : available;
-        if (choices.length > 0) e.dir = choices[Math.floor(Math.random() * choices.length)];
-      }
-      if (this.canMove(e, e.dir, terrain, solidAt)) {
-        e.targetTileX = e.tileX + dcf(e.dir);
-        e.targetTileY = e.tileY + drf(e.dir);
-        e.moving = true;
-        return;
-      }
+  private startMove(e: GrenadierEntity, terrain: Terrain, solidAt: (col: number, row: number) => boolean, _ptx: number, _pty: number, _canDig: boolean): void {
+    // Patrol randomly (prefer not to reverse)
+    const reverseE: Dir = e.dir === 'up' ? 'down' : e.dir === 'down' ? 'up' : e.dir === 'left' ? 'right' : 'left';
+    if (Math.random() < TURN_CHANCE || !this.canMove(e, e.dir, terrain, solidAt)) {
+      const available = DIRS.filter(d => this.canMove(e, d, terrain, solidAt));
+      const preferred = available.filter(d => d !== reverseE);
+      const choices = preferred.length > 0 ? preferred : available;
+      if (choices.length > 0) e.dir = choices[Math.floor(Math.random() * choices.length)];
+    }
+    if (this.canMove(e, e.dir, terrain, solidAt)) {
+      e.targetTileX = e.tileX + dcf(e.dir);
+      e.targetTileY = e.tileY + drf(e.dir);
+      e.moving = true;
+      return;
     }
     e.moving = false;
   }

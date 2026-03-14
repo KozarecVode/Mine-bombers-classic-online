@@ -15,18 +15,6 @@ const DIRS: Dir[] = ['up', 'down', 'left', 'right'];
 function dc(dir: Dir) { return dir === 'right' ? 1 : dir === 'left' ? -1 : 0; }
 function dr(dir: Dir) { return dir === 'down'  ? 1 : dir === 'up'   ? -1 : 0; }
 
-function chaseDirections(ex: number, ey: number, px: number, py: number): Dir[] {
-  const dx = px - ex, dy = py - ey;
-  const result: Dir[] = [];
-  if (Math.abs(dx) >= Math.abs(dy)) {
-    if (dx > 0) result.push('right'); else if (dx < 0) result.push('left');
-    if (dy > 0) result.push('down');  else if (dy < 0) result.push('up');
-  } else {
-    if (dy > 0) result.push('down');  else if (dy < 0) result.push('up');
-    if (dx > 0) result.push('right'); else if (dx < 0) result.push('left');
-  }
-  return result;
-}
 
 // ── Types ─────────────────────────────────────────────────────────────────────
 
@@ -79,16 +67,15 @@ export class GreyManager {
       digging: false,
       digTileX: 0,
       digTileY: 0,
+      hp: 66,
     });
   }
 
   applyFire(fireCells: Set<string>): void {
     for (const g of this.greys) {
-      if (g.phase === 'alive' && fireCells.has(`${g.tileX},${g.tileY}`)) {
-        g.phase = 'dead';
-        g.moving = false;
-        g.digging = false;
-      }
+      if (g.phase !== 'alive' || !fireCells.has(`${g.tileX},${g.tileY}`)) continue;
+      g.hp--;
+      if (g.hp <= 0) { g.phase = 'dead'; g.moving = false; g.digging = false; }
     }
   }
 
@@ -101,6 +88,10 @@ export class GreyManager {
   ): void {
     for (const g of this.greys) {
       if (g.phase === 'dead') continue;
+      if (!g.activated) {
+        if (Math.max(Math.abs(ptx - g.tileX), Math.abs(pty - g.tileY)) <= CHASE_RANGE) g.activated = true;
+        else continue;
+      }
 
       if (g.digging) {
         if (!isStone(terrain, g.digTileX, g.digTileY)) {
@@ -150,29 +141,8 @@ export class GreyManager {
     return !isStone(terrain, nc, nr) && !solidAt(nc, nr);
   }
 
-  private startMove(g: GreyEntity, terrain: Terrain, solidAt: (col: number, row: number) => boolean, ptx: number, pty: number, canDig: boolean): void {
-    const dist = Math.max(Math.abs(ptx - g.tileX), Math.abs(pty - g.tileY));
-    if (dist <= CHASE_RANGE) {
-      const dirs = chaseDirections(g.tileX, g.tileY, ptx, pty);
-      for (const dir of dirs) {
-        if (this.canMove(g, dir, terrain, solidAt)) {
-          g.dir = dir;
-          g.targetTileX = g.tileX + dc(dir);
-          g.targetTileY = g.tileY + dr(dir);
-          g.moving = true;
-          return;
-        }
-      }
-      if (canDig) {
-        for (const dir of dirs) {
-          const nc = g.tileX + dc(dir), nr = g.tileY + dr(dir);
-          if (isStone(terrain, nc, nr) && !solidAt(nc, nr)) {
-            g.dir = dir; g.digTileX = nc; g.digTileY = nr; g.digging = true; return;
-          }
-        }
-      }
-    }
-    // Fallback: patrol randomly when chase is blocked (prefer not to reverse)
+  private startMove(g: GreyEntity, terrain: Terrain, solidAt: (col: number, row: number) => boolean, _ptx: number, _pty: number, _canDig: boolean): void {
+    // Patrol randomly (prefer not to reverse)
     const reverseG: Dir = g.dir === 'up' ? 'down' : g.dir === 'down' ? 'up' : g.dir === 'left' ? 'right' : 'left';
     if (Math.random() < TURN_CHANCE || !this.canMove(g, g.dir, terrain, solidAt)) {
       const available = DIRS.filter(d => this.canMove(g, d, terrain, solidAt));

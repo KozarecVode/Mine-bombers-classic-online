@@ -118,6 +118,10 @@ export class TeleportManager {
     }
   }
 
+  hasPlacedAt(col: number, row: number): boolean {
+    return this.entities.some((e) => e.phase === "placed" && e.col === col && e.row === row);
+  }
+
   hasSolidAt(_col: number, _row: number): boolean {
     return false; // player walks into teleports
   }

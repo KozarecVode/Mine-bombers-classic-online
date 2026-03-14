@@ -16,6 +16,7 @@ export type TerrainTileType =
 export interface TerrainDetailCell {
   type: TerrainTileType;
   hp: number;
+  burnedGround?: boolean;
 }
 
 export type TerrainDetailMap = TerrainDetailCell[][];
@@ -206,7 +207,8 @@ export function applyExplosionToTerrain(
     const cell = detail[r][c];
     if (!isDiggable(cell.type)) continue;
     const nextType = nuclear ? 'ground' : (TILE_EXPLOSION_NEXT[cell.type] ?? 'ground');
-    detail[r][c] = { type: nextType, hp: TILE_MAX_HP[nextType] };
+    const burnedGround = nextType === 'ground' ? true : undefined;
+    detail[r][c] = { type: nextType, hp: TILE_MAX_HP[nextType], burnedGround };
     terrain[r][c] = !isPassable(nextType);
     changed = true;
   }
@@ -232,8 +234,11 @@ export function setTerrainTile(
   col: number,
   row: number,
   type: TerrainTileType,
+  burnedGround?: boolean,
 ): void {
   if (row < 0 || row >= detail.length || col < 0 || col >= detail[0].length) return;
-  detail[row][col] = { type, hp: TILE_MAX_HP[type] };
+  const cell: TerrainDetailCell = { type, hp: TILE_MAX_HP[type] };
+  if (burnedGround) cell.burnedGround = true;
+  detail[row][col] = cell;
   terrain[row][col] = !isPassable(type);
 }

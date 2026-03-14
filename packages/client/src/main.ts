@@ -2,7 +2,15 @@ import { TILE_SIZE, MAP_WIDTH, MAP_HEIGHT } from "@minebombers/shared";
 import { InputManager } from "./input.js";
 import { Renderer } from "./renderer.js";
 import { createLocalPlayer, updatePlayer } from "./game.js";
-import { generateTerrain, generateDetailMap, applyDigDamage, applyExplosionToTerrain, setTerrainTile, isStone, isDiggable } from "./terrain.js";
+import {
+  generateTerrain,
+  generateDetailMap,
+  applyDigDamage,
+  applyExplosionToTerrain,
+  setTerrainTile,
+  isStone,
+  isDiggable,
+} from "./terrain.js";
 import { loadAssets, Assets } from "./assets.js";
 import { TntManager } from "./tnt.js";
 import { BigCrossManager } from "./bigcross.js";
@@ -89,7 +97,7 @@ const cloneMgr = new CloneManager();
 function applyParsedLevel(parsed: ReturnType<typeof parseMneLevel>): void {
   for (let r = 0; r < MAP_HEIGHT; r++)
     for (let c = 0; c < MAP_WIDTH; c++) {
-      terrain[r][c]   = parsed.terrain[r][c];
+      terrain[r][c] = parsed.terrain[r][c];
       detailMap[r][c] = parsed.detailMap[r][c];
     }
 
@@ -109,20 +117,48 @@ function applyParsedLevel(parsed: ReturnType<typeof parseMneLevel>): void {
     const px = e.col * TILE_SIZE;
     const py = e.row * TILE_SIZE;
     switch (e.kind) {
-      case 'brown':      brownMgr.place(px, py, terrain);      break;
-      case 'grenadier':  grenadierMgr.place(px, py, terrain);  break;
-      case 'slime':      slimeMgr.place(px, py, terrain);      break;
-      case 'grey':       greyMgr.place(px, py, terrain);       break;
-      case 'boulder':    boulderMgr.place(px, py, terrain);    break;
-      case 'landmine':   landmineMgr.place(px, py, terrain);   break;
-      case 'door':       doorMgr.place(px, py, terrain);       break;
-      case 'doorswitch': doorSwitchMgr.place(px, py, terrain); break;
-      case 'lava':       lavaMgr.place(px, py, terrain);       break;
-      case 'barrel':     barrelMgr.place(px, py, terrain);     break;
-      case 'teleport':   teleportMgr.place(px, py, terrain);   break;
-      case 'urethane':   urethaneMgr.placeTile(Math.round(px / TILE_SIZE), Math.round(py / TILE_SIZE)); break;
-      case 'treasure':   treasureMgr.place(px, py, terrain, e.subtype as TreasureType); break;
-      case 'pickable':   pickableMgr.place(px, py, terrain, e.subtype as PickableType); break;
+      case "brown":
+        brownMgr.place(px, py, terrain);
+        break;
+      case "grenadier":
+        grenadierMgr.place(px, py, terrain);
+        break;
+      case "slime":
+        slimeMgr.place(px, py, terrain);
+        break;
+      case "grey":
+        greyMgr.place(px, py, terrain);
+        break;
+      case "boulder":
+        boulderMgr.place(px, py, terrain);
+        break;
+      case "landmine":
+        landmineMgr.place(px, py, terrain);
+        break;
+      case "door":
+        doorMgr.place(px, py, terrain);
+        break;
+      case "doorswitch":
+        doorSwitchMgr.place(px, py, terrain);
+        break;
+      case "lava":
+        lavaMgr.place(px, py, terrain);
+        break;
+      case "barrel":
+        barrelMgr.place(px, py, terrain);
+        break;
+      case "teleport":
+        teleportMgr.place(px, py, terrain);
+        break;
+      case "urethane":
+        urethaneMgr.placeTile(Math.round(px / TILE_SIZE), Math.round(py / TILE_SIZE));
+        break;
+      case "treasure":
+        treasureMgr.place(px, py, terrain, e.subtype as TreasureType);
+        break;
+      case "pickable":
+        pickableMgr.place(px, py, terrain, e.subtype as PickableType);
+        break;
     }
   }
 
@@ -262,6 +298,8 @@ let prevTileX = player.tileX;
 let prevTileY = player.tileY;
 let needsResetBump = false;
 let activeFireCells = new Set<string>();
+let deathTimer = 0;
+const DEATH_DELAY_FRAMES = 2 * 60;
 
 function loop(ts: number): void {
   requestAnimationFrame(loop);
@@ -281,16 +319,15 @@ function loop(ts: number): void {
   const tileY = player.tileY * TILE_SIZE;
   const facingDir = player.dir; // capture before updatePlayer can change it
 
-  // Pre-set digging flag so updatePlayer keeps animation ticking
-  const inputDir = input.getDirection();
-  if (!player.moving && inputDir !== 'none') {
-    const dc = inputDir === 'right' ? 1 : inputDir === 'left' ? -1 : 0;
-    const dr = inputDir === 'down'  ? 1 : inputDir === 'up'   ? -1 : 0;
-    const dnc = player.tileX + dc, dnr = player.tileY + dr;
-    player.digging = isStone(terrain, dnc, dnr)
-      || lavaMgr.hasSolidAt(dnc, dnr)
-      || urethaneMgr.hasSolidAt(dnc, dnr)
-      || plasticMgr.hasSolidAt(dnc, dnr);
+  // Dead players can't do anything
+  const inputDir = player.dead ? "none" : input.getDirection();
+  if (!player.moving && inputDir !== "none") {
+    const dc = inputDir === "right" ? 1 : inputDir === "left" ? -1 : 0;
+    const dr = inputDir === "down" ? 1 : inputDir === "up" ? -1 : 0;
+    const dnc = player.tileX + dc,
+      dnr = player.tileY + dr;
+    player.digging =
+      isStone(terrain, dnc, dnr) || lavaMgr.hasSolidAt(dnc, dnr) || urethaneMgr.hasSolidAt(dnc, dnr) || plasticMgr.hasSolidAt(dnc, dnr);
   } else {
     player.digging = false;
   }
@@ -319,6 +356,7 @@ function loop(ts: number): void {
       boulderMgr,
     ],
     jetpackMgr.getSpeed(),
+    (c, r) => teleportMgr.hasPlacedAt(c, r) || treasureMgr.hasSolidAt(c, r),
   );
 
   // Clear digging if player started moving (tile became passable mid-dig)
@@ -326,15 +364,16 @@ function loop(ts: number): void {
 
   // Apply dig damage to whatever is blocking the player
   if (player.digging) {
-    const dc = inputDir === 'right' ? 1 : inputDir === 'left' ? -1 : 0;
-    const dr = inputDir === 'down'  ? 1 : inputDir === 'up'   ? -1 : 0;
-    const nc = player.tileX + dc, nr = player.tileY + dr;
+    const dc = inputDir === "right" ? 1 : inputDir === "left" ? -1 : 0;
+    const dr = inputDir === "down" ? 1 : inputDir === "up" ? -1 : 0;
+    const nc = player.tileX + dc,
+      nr = player.tileY + dr;
     if (isStone(terrain, nc, nr)) {
-      if (applyDigDamage(detailMap, terrain, nc, nr, player.digPower)) renderer.markTerrainDirty();
+      if (applyDigDamage(detailMap, terrain, nc, nr, jetpackMgr.getDigPower(player.digPower))) renderer.markTerrainDirty();
     } else {
-      lavaMgr.applyDigDamage(nc, nr, player.digPower);
-      urethaneMgr.applyDigDamage(nc, nr, player.digPower);
-      plasticMgr.applyDigDamage(nc, nr, player.digPower);
+      lavaMgr.applyDigDamage(nc, nr, jetpackMgr.getDigPower(player.digPower));
+      urethaneMgr.applyDigDamage(nc, nr, jetpackMgr.getDigPower(player.digPower));
+      plasticMgr.applyDigDamage(nc, nr, jetpackMgr.getDigPower(player.digPower));
     }
   }
 
@@ -362,10 +401,10 @@ function loop(ts: number): void {
     doorMgr.toggle();
     needsResetBump = false; // keep debounce active — held direction must not re-trigger
   }
-  if (input.consumeWeaponSwitch()) {
+  if (!player.dead && input.consumeWeaponSwitch()) {
     selectedWeapon = WEAPONS[(WEAPONS.indexOf(selectedWeapon) + 1) % WEAPONS.length];
   }
-  if (input.consumeTntPress()) {
+  if (!player.dead && input.consumeTntPress()) {
     if (selectedWeapon === "tnt") tntMgr.place(tileX, tileY, "none", terrain);
     else if (selectedWeapon === "bigcross") bigCrossMgr.place(tileX, tileY, "none", terrain);
     else if (selectedWeapon === "smallcross") smallCrossMgr.place(tileX, tileY, "none", terrain);
@@ -402,17 +441,17 @@ function loop(ts: number): void {
     else if (selectedWeapon === "grey") greyMgr.place(player.x, player.y, terrain);
     else if (selectedWeapon === "clone") cloneMgr.place(player.x, player.y, terrain);
     else if (selectedWeapon === "treasure") treasureMgr.place(player.x, player.y, terrain);
-    else if (PICKABLE_TYPES.includes(selectedWeapon as typeof PICKABLE_TYPES[number]))
-      pickableMgr.place(player.x, player.y, terrain, selectedWeapon as typeof PICKABLE_TYPES[number]);
+    else if (PICKABLE_TYPES.includes(selectedWeapon as (typeof PICKABLE_TYPES)[number]))
+      pickableMgr.place(player.x, player.y, terrain, selectedWeapon as (typeof PICKABLE_TYPES)[number]);
   }
-  if (input.consumeFireExtPress()) {
+  if (!player.dead && input.consumeFireExtPress()) {
     fireExtMgr.fire(player.x, player.y, facingDir, terrain, [tntMgr, smallBombMgr, bigBombMgr, flameBombMgr], player.moving);
   }
-  if (input.consumeDetonatePress()) {
+  if (!player.dead && input.consumeDetonatePress()) {
     smallDetMgr.detonate(terrain);
     bigDetMgr.detonate(terrain);
   }
-  if (input.consumeTreasurePress()) {
+  if (!player.dead && input.consumeTreasurePress()) {
     treasureMgr.place(player.x, player.y, terrain);
   }
 
@@ -422,7 +461,7 @@ function loop(ts: number): void {
   const crossSolidAt = (c: number, r: number) =>
     doorMgr.hasSolidAt(c, r) ||
     doorSwitchMgr.hasSolidAt(c, r) ||
-    (isStone(terrain, c, r) && !isDiggable(detailMap[r]?.[c]?.type ?? 'ground'));
+    (isStone(terrain, c, r) && !isDiggable(detailMap[r]?.[c]?.type ?? "ground"));
   bigCrossMgr.update(player.x, player.y, terrain, crossSolidAt);
   smallCrossMgr.update(player.x, player.y, terrain, crossSolidAt);
   const monsterSolid = {
@@ -455,7 +494,7 @@ function loop(ts: number): void {
   smallBombMgr.update(player.x, player.y, terrain);
   bigBombMgr.update(player.x, player.y, terrain);
   landmineMgr.update(player.x, player.y, terrain);
-  flameBombMgr.update(player.x, player.y, terrain);
+  flameBombMgr.update(player.x, player.y, terrain, (c, r) => doorMgr.hasSolidAt(c, r) || doorSwitchMgr.hasSolidAt(c, r));
   flamethrowerMgr.update(terrain);
   fireExtMgr.update();
   smallDetMgr.update(player.x, player.y, terrain);
@@ -516,29 +555,30 @@ function loop(ts: number): void {
     if (applyDigDamage(detailMap, terrain, col, row, digPower)) renderer.markTerrainDirty();
   };
   slimeMgr.update(terrain, slimeSolidAt, player.tileX, player.tileY, monsterApplyDig);
-  for (const e of slimeMgr.getEntities()) if (e.phase === 'alive') treasureMgr.collectAt(e.tileX, e.tileY);
+  for (const e of slimeMgr.getEntities()) if (e.phase === "alive") treasureMgr.collectAt(e.tileX, e.tileY);
   brownMgr.update(terrain, slimeSolidAt, player.tileX, player.tileY, monsterApplyDig);
-  for (const e of brownMgr.getEntities()) if (e.phase === 'alive') treasureMgr.collectAt(e.tileX, e.tileY);
+  for (const e of brownMgr.getEntities()) if (e.phase === "alive") treasureMgr.collectAt(e.tileX, e.tileY);
   grenadierMgr.update(terrain, slimeSolidAt, player.tileX, player.tileY, grenadeMgr, monsterApplyDig);
-  for (const e of grenadierMgr.getEntities()) if (e.phase === 'alive') treasureMgr.collectAt(e.tileX, e.tileY);
+  for (const e of grenadierMgr.getEntities()) if (e.phase === "alive") treasureMgr.collectAt(e.tileX, e.tileY);
   greyMgr.update(terrain, slimeSolidAt, player.tileX, player.tileY, monsterApplyDig);
-  for (const e of greyMgr.getEntities()) if (e.phase === 'alive') treasureMgr.collectAt(e.tileX, e.tileY);
+  for (const e of greyMgr.getEntities()) if (e.phase === "alive") treasureMgr.collectAt(e.tileX, e.tileY);
 
   // Teleport monsters that step on a teleport pad (60-frame cooldown prevents re-teleport)
-  const allMonsters = [
-    ...slimeMgr.getEntities(),
-    ...brownMgr.getEntities(),
-    ...grenadierMgr.getEntities(),
-    ...greyMgr.getEntities(),
-  ];
+  const allMonsters = [...slimeMgr.getEntities(), ...brownMgr.getEntities(), ...grenadierMgr.getEntities(), ...greyMgr.getEntities()];
   for (const m of allMonsters) {
-    if (m.phase !== 'alive') continue;
-    if (m.teleportCooldown > 0) { m.teleportCooldown--; continue; }
+    if (m.phase !== "alive") continue;
+    if (m.teleportCooldown > 0) {
+      m.teleportCooldown--;
+      continue;
+    }
     const dest = teleportMgr.tryTeleport(m.tileX, m.tileY);
     if (dest) {
-      m.tileX = dest[0]; m.tileY = dest[1];
-      m.x = dest[0] * TILE_SIZE; m.y = dest[1] * TILE_SIZE;
-      m.targetTileX = dest[0]; m.targetTileY = dest[1];
+      m.tileX = dest[0];
+      m.tileY = dest[1];
+      m.x = dest[0] * TILE_SIZE;
+      m.y = dest[1] * TILE_SIZE;
+      m.targetTileX = dest[0];
+      m.targetTileY = dest[1];
       m.moving = false;
       m.teleportCooldown = 60;
     }
@@ -573,10 +613,10 @@ function loop(ts: number): void {
   if (tileChanged) {
     player.cash += treasureMgr.update(player.tileX, player.tileY);
     pickableMgr.consumeByMonsters([
-      ...slimeMgr.getEntities().filter(e => e.phase === 'alive'),
-      ...brownMgr.getEntities().filter(e => e.phase === 'alive'),
-      ...grenadierMgr.getEntities().filter(e => e.phase === 'alive'),
-      ...greyMgr.getEntities().filter(e => e.phase === 'alive'),
+      ...slimeMgr.getEntities().filter((e) => e.phase === "alive"),
+      ...brownMgr.getEntities().filter((e) => e.phase === "alive"),
+      ...grenadierMgr.getEntities().filter((e) => e.phase === "alive"),
+      ...greyMgr.getEntities().filter((e) => e.phase === "alive"),
     ]);
     for (const type of pickableMgr.update(player.tileX, player.tileY)) {
       if (type === "dig_power_1") player.digPower += 1;
@@ -588,30 +628,42 @@ function loop(ts: number): void {
   }
 
   // Cross-chain: all weapon fire cells can trigger each other
+  const tntFire = tntMgr.getFireCells();
+  const bigCrossFire = bigCrossMgr.getFireCells();
+  const smallCrossFire = smallCrossMgr.getFireCells();
   const grenadeFire = grenadeMgr.getFireCells();
+  const smallBombFire = smallBombMgr.getFireCells();
+  const bigBombFire = bigBombMgr.getFireCells();
+  const landmineFire = landmineMgr.getFireCells();
+  const flameBombFire = flameBombMgr.getFireCells();
   const flamethrowerFire = flamethrowerMgr.getFireCells();
-  const flameBarrelFire = barrelMgr.getFireCells();
+  const smallDetFire = smallDetMgr.getFireCells();
+  const bigDetFire = bigDetMgr.getFireCells();
+  const plasticFire = plasticMgr.getFireCells();
   const nuclearFire = nuclearMgr.getFireCells();
+  const jumpingBombFire = jumpingBombMgr.getFireCells();
+  const flameBarrelFire = barrelMgr.getFireCells();
+  const diggerBombFire = diggerBombMgr.getFireCells();
   const allFire = new Set([
-    ...tntMgr.getFireCells(),
-    ...bigCrossMgr.getFireCells(),
-    ...smallCrossMgr.getFireCells(),
+    ...tntFire,
+    ...bigCrossFire,
+    ...smallCrossFire,
     ...grenadeFire,
-    ...smallBombMgr.getFireCells(),
-    ...bigBombMgr.getFireCells(),
-    ...landmineMgr.getFireCells(),
-    ...flameBombMgr.getFireCells(),
+    ...smallBombFire,
+    ...bigBombFire,
+    ...landmineFire,
+    ...flameBombFire,
     ...flamethrowerFire,
-    ...smallDetMgr.getFireCells(),
-    ...bigDetMgr.getFireCells(),
-    ...plasticMgr.getFireCells(),
+    ...smallDetFire,
+    ...bigDetFire,
+    ...plasticFire,
     ...nuclearFire,
-    ...jumpingBombMgr.getFireCells(),
+    ...jumpingBombFire,
     ...teleportMgr.getFireCells(),
     ...flameBarrelFire,
-    ...diggerBombMgr.getFireCells(),
+    ...diggerBombFire,
   ]);
-  const flameFire = new Set([...flameBombMgr.getFireCells(), ...flamethrowerFire]);
+  const flameFire = new Set([...flameBombFire, ...flamethrowerFire]);
   const noTreasureFire = new Set([...flameFire, ...flameBarrelFire]);
   const explosionFire = new Set([...allFire].filter((k) => !noTreasureFire.has(k)));
   treasureMgr.applyFire(explosionFire);
@@ -619,20 +671,68 @@ function loop(ts: number): void {
   // Only flamethrower has no terrain effect; barrel explosions do affect terrain
   const noTerrainFire = new Set([...flamethrowerFire]);
   // Nuclear fire converts everything to ground; other fire degrades one step
-  const nonNuclearTerrainFire = new Set([...allFire].filter(k => !noTerrainFire.has(k) && !nuclearFire.has(k)));
-  const nuclearTerrainFire = new Set([...nuclearFire].filter(k => !noTerrainFire.has(k)));
-  const newNormalCells = new Set([...nonNuclearTerrainFire].filter(k => !activeFireCells.has(k)));
-  const newNuclearCells = new Set([...nuclearTerrainFire].filter(k => !activeFireCells.has(k)));
+  const nonNuclearTerrainFire = new Set([...allFire].filter((k) => !noTerrainFire.has(k) && !nuclearFire.has(k)));
+  const nuclearTerrainFire = new Set([...nuclearFire].filter((k) => !noTerrainFire.has(k)));
+  const newNormalCells = new Set([...nonNuclearTerrainFire].filter((k) => !activeFireCells.has(k)));
+  const newNuclearCells = new Set([...nuclearTerrainFire].filter((k) => !activeFireCells.has(k)));
   if (applyExplosionToTerrain(newNormalCells, allFire, terrain, detailMap)) renderer.markTerrainDirty();
   if (applyExplosionToTerrain(newNuclearCells, allFire, terrain, detailMap, true)) renderer.markTerrainDirty();
   // Boulders hit by explosion fire become rock_destroyed_2 — must run AFTER applyExplosionToTerrain
   // so the freshly-placed rock_destroyed_2 tile isn't immediately re-degraded to ground.
   const destroyedBoulders = boulderMgr.applyFire(explosionFire);
   for (const { col, row } of destroyedBoulders) {
-    const type = nuclearFire.has(`${col},${row}`) ? 'ground' : 'rock_destroyed_2';
+    const type = nuclearFire.has(`${col},${row}`) ? "ground" : "rock_destroyed_2";
     setTerrainTile(detailMap, terrain, col, row, type);
   }
   if (destroyedBoulders.length > 0) renderer.markTerrainDirty();
+  // Player damage from fire
+  const pt = `${player.tileX},${player.tileY}`;
+  const ptt = `${player.targetTileX},${player.targetTileY}`;
+  const inFire = (cells: Set<string>) => cells.has(pt) || cells.has(ptt);
+  const isNew = (cells: Set<string>) => inFire(cells) && !activeFireCells.has(pt) && !activeFireCells.has(ptt);
+  if (inFire(flamethrowerFire)) player.health -= 34;
+  if (isNew(flameBombFire)) player.health -= 84;
+  if (isNew(tntFire)) player.health -= 100;
+  if (isNew(bigCrossFire)) player.health -= 200;
+  if (isNew(smallCrossFire)) player.health -= 100;
+  if (isNew(grenadeFire)) player.health -= 255;
+  if (isNew(smallBombFire)) player.health -= 60;
+  if (isNew(bigBombFire)) player.health -= 84;
+  if (isNew(landmineFire)) player.health -= 60;
+  if (isNew(smallDetFire)) player.health -= 84;
+  if (isNew(bigDetFire)) player.health -= 100;
+  if (isNew(plasticFire)) player.health -= 84;
+  if (isNew(nuclearFire)) player.health -= 255;
+  if (isNew(flameBarrelFire)) player.health -= 220;
+  if (isNew(diggerBombFire)) player.health -= 10;
+  if (isNew(jumpingBombFire)) player.health -= [60, 84, 100][Math.floor(Math.random() * 3)];
+  // Monster contact damage (1 damage per frame per monster on same tile)
+  if (!player.dead) {
+    const ptx = player.tileX, pty = player.tileY;
+    for (const s of slimeMgr.getEntities()) {
+      if (s.phase === 'alive' && s.tileX === ptx && s.tileY === pty) player.health -= 1;
+    }
+    for (const b of brownMgr.getEntities()) {
+      if (b.phase === 'alive' && b.tileX === ptx && b.tileY === pty) player.health -= 2;
+    }
+    for (const g of greyMgr.getEntities()) {
+      if (g.phase === 'alive' && g.tileX === ptx && g.tileY === pty) player.health -= 12;
+    }
+    for (const e of grenadierMgr.getEntities()) {
+      if (e.phase === 'alive' && e.tileX === ptx && e.tileY === pty) player.health -= 3;
+    }
+    // Flying grenade collision damage
+    for (const g of grenadeMgr.getEntities()) {
+      if (g.phase === 'flying' && (g.tileX === ptx && g.tileY === pty)) player.health -= 255;
+    }
+  }
+  player.health = Math.max(0, player.health);
+  if (player.health <= 0 && !player.dead) {
+    player.dead = true;
+    player.moving = false;
+    player.digging = false;
+  }
+  if (!player.dead) deathTimer = 0;
   activeFireCells = allFire;
   lavaMgr.applyFire(allFire, terrain, (c, r) => urethaneMgr.hasSolidAt(c, r) || plasticMgr.hasSolidAt(c, r));
   slimeMgr.applyFire(allFire);
@@ -703,4 +803,17 @@ function loop(ts: number): void {
     pickableMgr,
     selectedWeapon,
   );
+
+  // After render: blood splatter visible — now count death delay
+  const players = [player]; // extend here when multiplayer is added
+  if (players.every((p) => p.dead)) {
+    deathTimer++;
+    if (deathTimer >= DEATH_DELAY_FRAMES) {
+      deathTimer = 0;
+      gameEl.style.display = "none";
+      lobbyEl.style.display = "flex";
+      player.health = MAX_HEALTH;
+      player.dead = false;
+    }
+  }
 }

@@ -26,6 +26,10 @@ export class JetpackManager {
     return this.remaining > 0 ? PLAYER_SPEED * SPEED_MULTIPLIER : PLAYER_SPEED;
   }
 
+  getDigPower(baseDigPower: number): number {
+    return this.remaining > 0 ? 300 : baseDigPower;
+  }
+
   getRemainingFraction(): number {
     return this.remaining / BOOST_TICKS;
   }

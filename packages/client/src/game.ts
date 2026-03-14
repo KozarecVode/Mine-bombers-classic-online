@@ -28,6 +28,7 @@ export interface LocalPlayer {
   cash: number;
   health: number;
   digPower: number;
+  dead: boolean;
 }
 
 const ANIM_TICKS = 5;
@@ -53,6 +54,7 @@ export function createLocalPlayer(name: string, color: number): LocalPlayer {
     cash: 0,
     health: MAX_HEALTH,
     digPower: 1,
+    dead: false,
   };
 }
 
@@ -63,6 +65,7 @@ export function updatePlayer(
   terrain: Terrain,
   weapons: WeaponMgr[] = [],
   speed: number = PLAYER_SPEED,
+  extraBlocksPush: (col: number, row: number) => boolean = () => false,
 ): void {
   if (stopPressed) player.pendingStop = true;
 
@@ -77,7 +80,7 @@ export function updatePlayer(
       player.targetTileY = player.tileY;
       player.dir = dir;
       player.pendingStop = false;
-      startMove(player, dir, terrain, weapons);
+      startMove(player, dir, terrain, weapons, extraBlocksPush);
     }
 
     if (player.moving) {
@@ -99,7 +102,7 @@ export function updatePlayer(
         } else {
           const nextDir = dir !== 'none' ? dir : player.dir;
           if (dir !== 'none') player.dir = dir;
-          startMove(player, nextDir, terrain, weapons);
+          startMove(player, nextDir, terrain, weapons, extraBlocksPush);
         }
       } else {
         // Advance toward target tile
@@ -112,7 +115,7 @@ export function updatePlayer(
     if (dir !== 'none') {
       player.dir = dir;
       player.pendingStop = false;
-      startMove(player, dir, terrain, weapons);
+      startMove(player, dir, terrain, weapons, extraBlocksPush);
     }
   }
 
@@ -133,6 +136,7 @@ function startMove(
   dir: Dir,
   terrain: Terrain,
   weapons: WeaponMgr[],
+  extraBlocksPush: (col: number, row: number) => boolean = () => false,
 ): void {
   const dcol = dir === 'right' ? 1 : dir === 'left' ? -1 : 0;
   const drow = dir === 'down'  ? 1 : dir === 'up'   ? -1 : 0;
@@ -145,8 +149,9 @@ function startMove(
   }
   for (const w of weapons) {
     if (w.hasSolidAt(nc, nr)) {
-      // Check push destination against ALL managers, not just the one being pushed
-      const destBlocked = weapons.some(other => other.hasSolidAt(nc + dcol, nr + drow));
+      // Check push destination against ALL managers and extra blockers (e.g. teleports)
+      const destBlocked = weapons.some(other => other.hasSolidAt(nc + dcol, nr + drow))
+        || extraBlocksPush(nc + dcol, nr + drow);
       if (destBlocked || !w.tryPush(nc, nr, dcol, drow, terrain)) {
         player.moving = false;
         return;

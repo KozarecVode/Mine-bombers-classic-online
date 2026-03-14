@@ -80,7 +80,9 @@ export interface Assets {
   doorswitch:    { off: HTMLCanvasElement; on: HTMLCanvasElement };
   treasure:      HTMLCanvasElement[]; // 10 sprites, indexed by TREASURE_NAMES order
   pickable:      HTMLCanvasElement[]; // 5 sprites, indexed by PICKABLE_TYPES order
+  playerDead:    HTMLCanvasElement;
   terrainTiles:  Record<string, HTMLCanvasElement>; // keyed by TerrainTileType
+  tileBorders:   Record<string, HTMLCanvasElement>; // keyed by e.g. "sand_down", "solid_rock_burned_up"
   dig: {
     up:    HTMLCanvasElement[];
     down:  HTMLCanvasElement[];
@@ -370,6 +372,19 @@ async function loadTerrainTileAssets(): Promise<Record<string, HTMLCanvasElement
   return result;
 }
 
+async function loadTileBorderAssets(): Promise<Record<string, HTMLCanvasElement>> {
+  const keys: string[] = [];
+  for (const base of ['sand', 'solid_rock']) {
+    for (const dir of ['up', 'down', 'left', 'right']) {
+      keys.push(`${base}_${dir}`, `${base}_burned_${dir}`);
+    }
+  }
+  const imgs = await Promise.all(keys.map(k => loadImage(`/art/texture/world/tile_borders/${k}.png`)));
+  const result: Record<string, HTMLCanvasElement> = {};
+  imgs.forEach((img, i) => { result[keys[i]] = toCanvas(img); });
+  return result;
+}
+
 async function loadDigAnimation(): Promise<Assets['dig']> {
   async function loadDigDir(dir: string, start: number): Promise<HTMLCanvasElement[]> {
     const imgs = await Promise.all(
@@ -408,7 +423,7 @@ export async function loadAssets(): Promise<Assets> {
     loadGrenadierAssets(),
     loadGreyAssets(),
   ]);
-  const [tnt, bigcross, smallcross, grenadeImg, smallbomb, bigbomb, landmineImg, flamebomb, sdImg, bdImg, u1Img, u2Img, p1Img, p2Img, n1Img, n2Img, n3Img, jbImg, lavaImg, teleportImg, barrelImg, diggerImg, boulderImg, door, swOffImg, swOnImg, treasure, pickable, terrainTiles, dig] = await Promise.all([
+  const [tnt, bigcross, smallcross, grenadeImg, smallbomb, bigbomb, landmineImg, flamebomb, sdImg, bdImg, u1Img, u2Img, p1Img, p2Img, n1Img, n2Img, n3Img, jbImg, lavaImg, teleportImg, barrelImg, diggerImg, boulderImg, door, swOffImg, swOnImg, treasure, pickable, terrainTiles, tileBorders, dig, playerDeadImg] = await Promise.all([
     loadTntAssets(explosion),
     loadBigCrossAssets(explosion),
     loadSmallCrossAssets(explosion),
@@ -438,7 +453,9 @@ export async function loadAssets(): Promise<Assets> {
     loadTreasureAssets(),
     loadPickableAssets(),
     loadTerrainTileAssets(),
+    loadTileBorderAssets(),
     loadDigAnimation(),
+    loadImage('/art/texture/world/dead.png'),
   ]);
   const grenade       = removeBg(grenadeImg);
   const landmine      = removeBg(landmineImg);
@@ -454,5 +471,6 @@ export async function loadAssets(): Promise<Assets> {
   const diggerbomb    = removeBg(diggerImg);
   const boulder       = removeBg(boulderImg);
   const doorswitch    = { off: toCanvas(swOffImg), on: toCanvas(swOnImg) };
-  return { ground, wall, walk: { up, down, left, right }, tnt, bigcross, smallcross, grenade, smallbomb, bigbomb, landmine, flamebomb, smalldetonate, bigdetonate, urethane, plastic, nuclear, jumpingbomb, lava, teleport, barrel, diggerbomb, boulder, slime, brown, grenadier, grey, door, doorswitch, treasure, pickable, terrainTiles, dig };
+  const playerDead = toCanvas(playerDeadImg);
+  return { ground, wall, walk: { up, down, left, right }, tnt, bigcross, smallcross, grenade, smallbomb, bigbomb, landmine, flamebomb, smalldetonate, bigdetonate, urethane, plastic, nuclear, jumpingbomb, lava, teleport, barrel, diggerbomb, boulder, slime, brown, grenadier, grey, door, doorswitch, treasure, pickable, playerDead, terrainTiles, tileBorders, dig };
 }

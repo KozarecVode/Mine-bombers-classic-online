@@ -84,7 +84,7 @@ export class DiggerBombManager {
         visited.add(key);
         const t = detailMap[nr][nc].type;
         if (!t.startsWith("solid_rock") && !t.startsWith("rock_")) continue;
-        setTerrainTile(detailMap, terrain, nc, nr, "ground");
+        setTerrainTile(detailMap, terrain, nc, nr, "ground", true);
         e.cells.push([nc, nr]);
         queue.push([nc, nr]);
         terrainChanged = true;
