@@ -147,5 +147,23 @@ export class PlasticManager {
     return Math.min(Math.floor(e.tick / EXPLODE_TICKS_PER_FRAME), EXPLODE_FRAME_COUNT - 1);
   }
 
+  getNetState(): Array<{ id: number; phase: string; armedCells: [number, number][]; explosionCells: [number, number][] }> {
+    return this.entities.map(e => ({ id: e.id, phase: e.phase, armedCells: e.armedCells.slice() as [number, number][], explosionCells: e.explosionCells.slice() as [number, number][] }));
+  }
+
+  applyNetState(data: Array<{ id: number; phase: string; armedCells: [number, number][]; explosionCells: [number, number][] }>): void {
+    const byId = new Map(this.entities.map(e => [e.id, e]));
+    for (const d of data) {
+      const e = byId.get(d.id);
+      if (e) {
+        e.phase = d.phase as PlasticPhase;
+        e.armedCells = d.armedCells.slice() as [number, number][];
+        e.explosionCells = d.explosionCells.slice() as [number, number][];
+      }
+    }
+    const hostIds = new Set(data.map(d => d.id));
+    this.entities = this.entities.filter(e => hostIds.has(e.id));
+  }
+
   getEntities(): PlasticEntity[] { return this.entities; }
 }

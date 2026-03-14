@@ -84,7 +84,20 @@ export class BombManager {
     this.entities = this.entities.filter((e) => e.phase !== "done");
   }
 
-  private applyExplosion(e: BombEntity, terrain: Terrain): void {
+  forcePhase(id: number, phase: BombPhase, terrain: Terrain): void {
+    const e = this.entities.find(e => e.id === id);
+    if (!e || e.phase === phase) return;
+    if (phase === 'disabled') {
+      e.phase = 'disabled';
+      e.tick = 0;
+    } else if (phase === 'exploding' && e.phase === 'fusing') {
+      e.phase = 'exploding';
+      e.tick = 0;
+      this.applyExplosion(e, terrain);
+    }
+  }
+
+  applyExplosion(e: BombEntity, terrain: Terrain): void {
     const rows = terrain.length, cols = terrain[0].length;
     const visual: [number, number][] = [];
     for (const [dx, dy] of this.pattern) {

@@ -1,6 +1,6 @@
-import type { NetMsg, NetPlayer, NetDir, TerrainChange, LevelInitData, LobbyPlayer, NetMonster, NetPushable } from '@minebombers/shared';
+import type { NetMsg, NetPlayer, NetDir, TerrainChange, LevelInitData, LobbyPlayer, NetMonster, NetPushable, NetClone } from '@minebombers/shared';
 
-export type { NetDir, LevelInitData, LobbyPlayer, NetMonster, NetPushable };
+export type { NetDir, LevelInitData, LobbyPlayer, NetMonster, NetPushable, NetClone };
 
 export interface RemoteInput {
   dir: NetDir;
@@ -17,13 +17,13 @@ export class NetworkManager {
   onPlayerLeave?: (playerId: number) => void;
   onPromotedHost?: () => void;
   onInitData?: (data: LevelInitData) => void;
-  onStateUpdate?: (players: NetPlayer[], monsters: NetMonster[], pushables: NetPushable[], doorSwitchOn: boolean, doorOpen: boolean, lava: Array<{ id: number; cells: [number, number][] }>) => void;
+  onStateUpdate?: (players: NetPlayer[], monsters: NetMonster[], pushables: NetPushable[], clones: NetClone[], doorSwitchOn: boolean, doorOpen: boolean, lava: Array<{ id: number; cells: [number, number][] }>, urethane: Array<{ id: number; phase: string; cells: [number, number][] }>, plastic: Array<{ id: number; phase: string; armedCells: [number, number][]; explosionCells: [number, number][] }>) => void;
   onTerrainChange?: (changes: TerrainChange[]) => void;
   onLobbyUpdate?: (players: LobbyPlayer[]) => void;
   onPlayerName?: (playerId: number, name: string) => void;
   onItemRemove?: (pickable: number[], treasure: number[]) => void;
   onGameOver?: () => void;
-  onWeaponAct?: (weapon: string, x: number, y: number, tileX: number, tileY: number, dir: NetDir, moving: boolean) => void;
+  onWeaponAct?: (weapon: string, x: number, y: number, tileX: number, tileY: number, dir: NetDir, moving: boolean, actorColor: number) => void;
 
   private ws: WebSocket | null = null;
   private gameTick = 0;
@@ -69,7 +69,7 @@ export class NetworkManager {
         break;
       }
       case 'state':
-        this.onStateUpdate?.(msg.players, msg.monsters ?? [], msg.pushables ?? [], msg.doorSwitchOn ?? false, msg.doorOpen ?? false, msg.lava ?? []);
+        this.onStateUpdate?.(msg.players, msg.monsters ?? [], msg.pushables ?? [], msg.clones ?? [], msg.doorSwitchOn ?? false, msg.doorOpen ?? false, msg.lava ?? [], msg.urethane ?? [], msg.plastic ?? []);
         break;
       case 'terrain':
         this.onTerrainChange?.(msg.changes);
@@ -92,7 +92,7 @@ export class NetworkManager {
         this.onGameOver?.();
         break;
       case 'weapon_act':
-        this.onWeaponAct?.(msg.weapon, msg.x, msg.y, msg.tileX, msg.tileY, msg.dir, msg.moving);
+        this.onWeaponAct?.(msg.weapon, msg.x, msg.y, msg.tileX, msg.tileY, msg.dir, msg.moving, msg.actorColor ?? 0);
         break;
     }
   }
@@ -103,10 +103,10 @@ export class NetworkManager {
   }
 
   // HOST: send state snapshot — internally throttled to SNAPSHOT_EVERY ticks
-  sendSnapshot(players: NetPlayer[], monsters: NetMonster[], pushables: NetPushable[], doorSwitchOn: boolean, doorOpen: boolean, lava: Array<{ id: number; cells: [number, number][] }>): void {
+  sendSnapshot(players: NetPlayer[], monsters: NetMonster[], pushables: NetPushable[], clones: NetClone[], doorSwitchOn: boolean, doorOpen: boolean, lava: Array<{ id: number; cells: [number, number][] }>, urethane: Array<{ id: number; phase: string; cells: [number, number][] }>, plastic: Array<{ id: number; phase: string; armedCells: [number, number][]; explosionCells: [number, number][] }>): void {
     this.gameTick++;
     if (this.gameTick % this.SNAPSHOT_EVERY !== 0) return;
-    this.send({ type: 'state', tick: this.gameTick, players, monsters, pushables, doorSwitchOn, doorOpen, lava });
+    this.send({ type: 'state', tick: this.gameTick, players, monsters, pushables, clones, doorSwitchOn, doorOpen, lava, urethane, plastic });
   }
 
   // HOST: send terrain+detail tile changes immediately
@@ -116,8 +116,8 @@ export class NetworkManager {
   }
 
   // HOST: broadcast weapon placement to all clients
-  sendWeaponAct(weapon: string, x: number, y: number, tileX: number, tileY: number, dir: NetDir, moving: boolean): void {
-    this.send({ type: 'weapon_act', weapon, x, y, tileX, tileY, dir, moving });
+  sendWeaponAct(weapon: string, x: number, y: number, tileX: number, tileY: number, dir: NetDir, moving: boolean, actorColor = 0): void {
+    this.send({ type: 'weapon_act', weapon, x, y, tileX, tileY, dir, moving, actorColor });
   }
 
   // HOST: broadcast game over to all clients

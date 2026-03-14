@@ -701,9 +701,9 @@ export class Renderer {
     let frames: HTMLCanvasElement[];
     if (e.digging) {
       const cell = detailMap[e.digTileY]?.[e.digTileX];
-      frames = (cell && isHardDigTile(cell.type)) ? assets.dig[0][dirKey] : assets.walk[0][dirKey];
+      frames = (cell && isHardDigTile(cell.type)) ? (assets.dig[e.color] ?? assets.dig[0])[dirKey] : (assets.walk[e.color] ?? assets.walk[0])[dirKey];
     } else {
-      frames = assets.walk[0][dirKey];
+      frames = (assets.walk[e.color] ?? assets.walk[0])[dirKey];
     }
     const frame = (e.moving || e.digging) ? frames[e.animFrame % frames.length] : frames[0];
     this.ctx.drawImage(frame, Math.round(e.x), Math.round(e.y) + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);

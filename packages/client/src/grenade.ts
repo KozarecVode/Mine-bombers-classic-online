@@ -66,7 +66,7 @@ export class GrenadeManager {
     if (wallAhead) this.triggerExplosion(e, terrain);
   }
 
-  update(terrain: Terrain, solidCheckers: SolidChecker[] = []): void {
+  update(terrain: Terrain, solidCheckers: SolidChecker[] = [], playerOccupied: (col: number, row: number) => boolean = () => false): void {
     for (const e of this.entities) {
       e.tick++;
       if (e.phase === "flying") {
@@ -79,7 +79,7 @@ export class GrenadeManager {
         for (let i = 0; i < TILES_PER_TICK && e.phase === "flying"; i++) {
           const nc = e.tileX + dc,
             nr = e.tileY + dr;
-          if (isStone(terrain, nc, nr) || solidCheckers.some((s) => s.hasSolidAt(nc, nr))) {
+          if (isStone(terrain, nc, nr) || solidCheckers.some((s) => s.hasSolidAt(nc, nr)) || playerOccupied(nc, nr)) {
             this.triggerExplosion(e, terrain);
           } else {
             e.tileX = nc;

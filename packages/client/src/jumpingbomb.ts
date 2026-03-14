@@ -153,5 +153,15 @@ export class JumpingBombManager {
     return Math.min(Math.floor(ex.tick / EXPLODE_TICKS_PER_FRAME), EXPLODE_FRAME_COUNT - 1);
   }
 
+  forceState(id: number, tileX: number, tileY: number, tick: number, fuseTicks: number, explosionsLeft: number): void {
+    const e = this.entities.find(e => e.id === id);
+    if (!e) return;
+    e.tileX = tileX;
+    e.tileY = tileY;
+    e.tick = tick;
+    e.fuseTicks = fuseTicks;
+    e.explosionsLeft = explosionsLeft;
+  }
+
   getEntities(): JumpingBombEntity[] { return this.entities; }
 }

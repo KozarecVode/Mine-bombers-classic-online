@@ -219,6 +219,24 @@ export class UrethaneManager {
     return Math.min(Math.floor(f.tick / FIRE_TICKS_PER_FRAME), FIRE_FRAME_COUNT - 1);
   }
 
+  getNetState(): Array<{ id: number; phase: string; cells: [number, number][] }> {
+    return this.entities.map(e => ({ id: e.id, phase: e.phase, cells: e.cells.slice() as [number, number][] }));
+  }
+
+  applyNetState(data: Array<{ id: number; phase: string; cells: [number, number][] }>): void {
+    const byId = new Map(this.entities.map(e => [e.id, e]));
+    for (const d of data) {
+      const e = byId.get(d.id);
+      if (e) {
+        e.phase = d.phase as UrethanePhase;
+        e.cells = d.cells.slice() as [number, number][];
+      }
+    }
+    // Remove entities not in the host state
+    const hostIds = new Set(data.map(d => d.id));
+    this.entities = this.entities.filter(e => hostIds.has(e.id));
+  }
+
   getEntities(): UrethaneEntity[] { return this.entities; }
   getFires(): UrethaneFire[] { return this.fires; }
 }

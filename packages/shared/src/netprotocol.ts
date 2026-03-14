@@ -8,6 +8,9 @@ export interface NetPushable {
   tileX: number;
   tileY: number;
   phase?: string;
+  tick?: number;
+  fuseTicks?: number;
+  explosionsLeft?: number;
 }
 
 export interface NetMonster {
@@ -24,6 +27,22 @@ export interface NetMonster {
   phase: 'alive' | 'dead';
   hp: number;
   shooting?: boolean;   // grenadier only
+}
+
+export interface NetClone {
+  id: number;
+  x: number; y: number;
+  tileX: number; tileY: number;
+  targetTileX: number; targetTileY: number;
+  dir: NetDir;
+  animFrame: number;
+  moving: boolean;
+  digging: boolean;
+  digTileX: number; digTileY: number;
+  phase: 'alive' | 'dead';
+  shooting: boolean;
+  ownerId: number;
+  color: number;
 }
 
 export interface NetPlayer {
@@ -66,6 +85,7 @@ export interface TerrainChange {
   row: number;
   solid: boolean;
   cellType: string;
+  burnedGround?: boolean;
 }
 
 export type NetMsg =
@@ -76,7 +96,7 @@ export type NetMsg =
   | { type: 'promoted_host' }
   // Host → all clients (relayed by server)
   | ({ type: 'init' } & LevelInitData)
-  | { type: 'state'; tick: number; players: NetPlayer[]; monsters: NetMonster[]; pushables: NetPushable[]; doorSwitchOn?: boolean; doorOpen?: boolean; lava?: Array<{ id: number; cells: [number, number][] }> }
+  | { type: 'state'; tick: number; players: NetPlayer[]; monsters: NetMonster[]; pushables: NetPushable[]; clones?: NetClone[]; doorSwitchOn?: boolean; doorOpen?: boolean; lava?: Array<{ id: number; cells: [number, number][] }>; urethane?: Array<{ id: number; phase: string; cells: [number, number][] }>; plastic?: Array<{ id: number; phase: string; armedCells: [number, number][]; explosionCells: [number, number][] }> }
   | { type: 'terrain'; changes: TerrainChange[] }
   | { type: 'lobby'; players: LobbyPlayer[] }
   // Any player → host (relayed by server, tagged with fromPlayerId)
@@ -88,4 +108,4 @@ export type NetMsg =
   // Host → all clients: game over, return to lobby
   | { type: 'game_over' }
   // Host → all clients: host placed a weapon (relayed for visual sync)
-  | { type: 'weapon_act'; weapon: string; x: number; y: number; tileX: number; tileY: number; dir: NetDir; moving: boolean };
+  | { type: 'weapon_act'; weapon: string; x: number; y: number; tileX: number; tileY: number; dir: NetDir; moving: boolean; actorColor?: number };

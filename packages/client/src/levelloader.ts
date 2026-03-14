@@ -21,6 +21,7 @@ export interface LevelEntity {
     | "barrel"
     | "teleport"
     | "urethane"
+    | "wall"
     | "treasure"
     | "pickable";
   subtype?: TreasureType | PickableType;

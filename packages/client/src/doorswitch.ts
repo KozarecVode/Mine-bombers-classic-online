@@ -19,6 +19,9 @@ export class DoorSwitchManager {
   private heldThisFrame = new Set<string>();
   private heldLastFrame = new Set<string>();
   private pending = false;
+  // Post-fire cooldown prevents rapid double-toggles from network jitter
+  private cooldown = 0;
+  private readonly SWITCH_COOLDOWN = 20;
 
   place(playerX: number, playerY: number, terrain: Terrain): void {
     const col = Math.round(playerX / TILE_SIZE);
@@ -45,6 +48,7 @@ export class DoorSwitchManager {
     if (!this.pending) return false;
     this.pending = false;
     this.on = !this.on;
+    this.cooldown = this.SWITCH_COOLDOWN;
     return true;
   }
 
@@ -52,6 +56,7 @@ export class DoorSwitchManager {
   endFrame(): void {
     this.heldLastFrame = new Set(this.heldThisFrame);
     this.heldThisFrame.clear();
+    if (this.cooldown > 0) this.cooldown--;
   }
 
   hasSolidAt(col: number, row: number): boolean {
@@ -62,8 +67,8 @@ export class DoorSwitchManager {
     const key = `${col},${row}`;
     if (this.switchKeys.has(key)) {
       this.heldThisFrame.add(key);
-      if (!this.heldLastFrame.has(key)) {
-        this.pending = true; // first touch this contact — fire
+      if (!this.heldLastFrame.has(key) && this.cooldown <= 0) {
+        this.pending = true; // first touch this contact, cooldown expired — fire
       }
       return false; // always blocks
     }

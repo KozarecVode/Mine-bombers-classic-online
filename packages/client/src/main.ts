@@ -18,7 +18,7 @@ import { loadAssets, Assets } from "./assets.js";
 import { TntManager, type TntPhase } from "./tnt.js";
 import { BigCrossManager } from "./bigcross.js";
 import { GrenadeManager } from "./grenade.js";
-import { BombManager, SMALL_BOMB_PATTERN, BIG_BOMB_PATTERN } from "./bomb.js";
+import { BombManager, SMALL_BOMB_PATTERN, BIG_BOMB_PATTERN, type BombPhase } from "./bomb.js";
 import { LandmineManager } from "./landmine.js";
 import { FlameBombManager } from "./flamebomb.js";
 import { FlamethrowerManager } from "./flamethrower.js";
@@ -105,6 +105,7 @@ const netMgr = new NetworkManager();
 const remotePlayers = new Map<number, LocalPlayer>();
 let prevTerrain: boolean[][] | null = null;
 let prevDetailType: string[][] | null = null;
+let prevBurnedGround: boolean[][] | null = null;
 
 // ── Lobby player list ─────────────────────────────────────────────────────────
 
@@ -166,7 +167,7 @@ function toNetPlayer(p: LocalPlayer, id: number): NetPlayer {
 }
 
 // HOST: place a weapon on behalf of a remote player
-function applyRemoteWeapon(rp: { x: number; y: number; tileX: number; tileY: number; dir: Dir; moving: boolean }, action: string): void {
+function applyRemoteWeapon(rp: { x: number; y: number; tileX: number; tileY: number; dir: Dir; moving: boolean }, action: string, ownerId = 0, actorColor = 0): void {
   const tx = rp.tileX * TILE_SIZE, ty = rp.tileY * TILE_SIZE;
   if (action === '__detonate__') { smallDetMgr.detonate(terrain); bigDetMgr.detonate(terrain); }
   else if (action === '__fireext__') fireExtMgr.fire(rp.x, rp.y, rp.dir, terrain, [tntMgr, smallBombMgr, bigBombMgr, flameBombMgr], rp.moving);
@@ -196,7 +197,8 @@ function applyRemoteWeapon(rp: { x: number; y: number; tileX: number; tileY: num
   else if (action === 'brown') brownMgr.place(rp.x, rp.y, terrain);
   else if (action === 'grenadier') grenadierMgr.place(rp.x, rp.y, terrain);
   else if (action === 'grey') greyMgr.place(rp.x, rp.y, terrain);
-  else if (action === 'clone') cloneMgr.place(rp.x, rp.y, terrain);
+  else if (action === 'clone') { if (!netMgr.connected || netMgr.isHost) cloneMgr.place(rp.x, rp.y, terrain, ownerId, actorColor); }
+  else if (action === 'clone_grenade') grenadeMgr.placeAt(rp.tileX, rp.tileY, rp.dir as Exclude<Dir, "none">, terrain);
   else if (action === 'treasure') treasureMgr.place(rp.x, rp.y, terrain);
   else if (action === 'landmine') landmineMgr.place(rp.x, rp.y, terrain);
   else if (PICKABLE_TYPES.includes(action as (typeof PICKABLE_TYPES)[number]))
@@ -255,6 +257,9 @@ function applyParsedLevel(parsed: ReturnType<typeof parseMneLevel>): void {
         break;
       case "barrel":
         barrelMgr.place(px, py, terrain);
+        break;
+      case "wall":
+        wallMgr.place(px, py, terrain);
         break;
       case "teleport":
         teleportMgr.place(px, py, terrain);
@@ -387,6 +392,9 @@ function collectPushables(): NetPushable[] {
   add('diggerbomb', diggerBombMgr.getEntities());
   add('barrel', barrelMgr.getEntities());
   for (const b of boulderMgr.getEntities()) r.push({ kind: 'boulder', id: b.id, tileX: b.tileX, tileY: b.tileY });
+  for (const e of jumpingBombMgr.getEntities()) {
+    if (!e.done) r.push({ kind: 'jumpingbomb', id: e.id, tileX: e.tileX, tileY: e.tileY, tick: e.tick, fuseTicks: e.fuseTicks, explosionsLeft: e.explosionsLeft });
+  }
   return r;
 }
 
@@ -421,6 +429,21 @@ function applyPushables(pushables: NetPushable[]): void {
   if (tntData) {
     for (const [id, p] of tntData) {
       if (p.phase) tntMgr.forcePhase(id, p.phase as TntPhase, terrain);
+    }
+  }
+  for (const kind of ['smallbomb', 'bigbomb'] as const) {
+    const mgr = kind === 'smallbomb' ? smallBombMgr : bigBombMgr;
+    const data = byKind.get(kind);
+    if (data) {
+      for (const [id, p] of data) {
+        if (p.phase) mgr.forcePhase(id, p.phase as BombPhase, terrain);
+      }
+    }
+  }
+  const jumpData = byKind.get('jumpingbomb');
+  if (jumpData) {
+    for (const [id, p] of jumpData) {
+      jumpingBombMgr.forceState(id, p.tileX, p.tileY, p.tick ?? 0, p.fuseTicks ?? 0, p.explosionsLeft ?? 0);
     }
   }
 }
@@ -503,6 +526,7 @@ netMgr.connect(WS_URL)
     netMgr.onPromotedHost = () => {
       prevTerrain = terrain.map(row => [...row]);
       prevDetailType = detailMap.map(row => row.map(c => c.type));
+      prevBurnedGround = detailMap.map(row => row.map(c => !!c.burnedGround));
       waitingMsgEl.style.display = 'none';
       joinBtn.textContent = 'PLAY';
       enablePlayIfReady();
@@ -539,15 +563,18 @@ netMgr.connect(WS_URL)
       startGame();
     };
 
-    netMgr.onStateUpdate = (players, monsters, pushables, doorSwitchOn, doorOpen, lava) => {
+    netMgr.onStateUpdate = (players, monsters, pushables, clones, doorSwitchOn, doorOpen, lava, urethane, plastic) => {
       applyPushables(pushables);
       slimeMgr.applyNetState(monsters);
       brownMgr.applyNetState(monsters);
       grenadierMgr.applyNetState(monsters);
       greyMgr.applyNetState(monsters);
+      cloneMgr.applyNetState(clones);
       doorSwitchMgr.setOn(doorSwitchOn);
       doorMgr.setOpen(doorOpen);
       lavaMgr.applyNetState(lava);
+      urethaneMgr.applyNetState(urethane);
+      plasticMgr.applyNetState(plastic);
       for (const np of players) {
         if (np.id === netMgr.localPlayerId) {
           player.health = np.health;
@@ -571,9 +598,9 @@ netMgr.connect(WS_URL)
     };
 
     netMgr.onTerrainChange = (changes: TerrainChange[]) => {
-      for (const { col, row, solid, cellType } of changes) {
+      for (const { col, row, solid, cellType, burnedGround } of changes) {
         terrain[row][col] = solid;
-        detailMap[row][col] = { type: cellType as TerrainTileType, hp: TILE_MAX_HP[cellType as TerrainTileType] ?? 0 };
+        detailMap[row][col] = { type: cellType as TerrainTileType, hp: TILE_MAX_HP[cellType as TerrainTileType] ?? 0, burnedGround: burnedGround || undefined };
       }
       renderer.markTerrainDirty();
     };
@@ -585,8 +612,8 @@ netMgr.connect(WS_URL)
 
     netMgr.onGameOver = () => { returnToLobby(); };
 
-    netMgr.onWeaponAct = (weapon, x, y, tileX, tileY, dir, moving) => {
-      applyRemoteWeapon({ x, y, tileX, tileY, dir: dir as Dir, moving }, weapon);
+    netMgr.onWeaponAct = (weapon, x, y, tileX, tileY, dir, moving, actorColor) => {
+      applyRemoteWeapon({ x, y, tileX, tileY, dir: dir as Dir, moving }, weapon, actorColor, actorColor);
     };
   })
   .catch(() => {
@@ -730,7 +757,7 @@ function loop(ts: number): void {
             plasticMgr.applyDigDamage(rnc, rnr, jetpackMgr.getDigPower(rp.digPower));
           }
         }
-        for (const action of ri.actions) applyRemoteWeapon(rp, action);
+        for (const action of ri.actions) applyRemoteWeapon(rp, action, pid, rp.color);
         // Remote player pickups (host is authoritative)
         rp.cash += treasureMgr.update(rp.tileX, rp.tileY);
         for (const type of pickableMgr.update(rp.tileX, rp.tileY)) {
@@ -831,7 +858,7 @@ function loop(ts: number): void {
       else if (selectedWeapon === "brown") brownMgr.place(player.x, player.y, terrain);
       else if (selectedWeapon === "grenadier") grenadierMgr.place(player.x, player.y, terrain);
       else if (selectedWeapon === "grey") greyMgr.place(player.x, player.y, terrain);
-      else if (selectedWeapon === "clone") cloneMgr.place(player.x, player.y, terrain);
+      // clone: placed by host only, synced via state update
       else if (selectedWeapon === "treasure") treasureMgr.place(player.x, player.y, terrain);
       else if (PICKABLE_TYPES.includes(selectedWeapon as (typeof PICKABLE_TYPES)[number]))
         pickableMgr.place(player.x, player.y, terrain, selectedWeapon as (typeof PICKABLE_TYPES)[number]);
@@ -880,12 +907,12 @@ function loop(ts: number): void {
     else if (selectedWeapon === "brown") brownMgr.place(player.x, player.y, terrain);
     else if (selectedWeapon === "grenadier") grenadierMgr.place(player.x, player.y, terrain);
     else if (selectedWeapon === "grey") greyMgr.place(player.x, player.y, terrain);
-    else if (selectedWeapon === "clone") cloneMgr.place(player.x, player.y, terrain);
+    else if (selectedWeapon === "clone") cloneMgr.place(player.x, player.y, terrain, netMgr.localPlayerId, player.color);
     else if (selectedWeapon === "treasure") treasureMgr.place(player.x, player.y, terrain);
     else if (PICKABLE_TYPES.includes(selectedWeapon as (typeof PICKABLE_TYPES)[number]))
       pickableMgr.place(player.x, player.y, terrain, selectedWeapon as (typeof PICKABLE_TYPES)[number]);
     if (netMgr.connected && netMgr.isHost)
-      netMgr.sendWeaponAct(selectedWeapon, player.x, player.y, player.tileX, player.tileY, player.dir as NetDir, player.moving);
+      netMgr.sendWeaponAct(selectedWeapon, player.x, player.y, player.tileX, player.tileY, player.dir as NetDir, player.moving, player.color);
   }
   if (!player.dead && input.consumeFireExtPress()) {
     fireExtMgr.fire(player.x, player.y, facingDir, terrain, [tntMgr, smallBombMgr, bigBombMgr, flameBombMgr], player.moving);
@@ -914,6 +941,13 @@ function loop(ts: number): void {
     (isStone(terrain, c, r) && !isDiggable(detailMap[r]?.[c]?.type ?? "ground"));
   bigCrossMgr.update(player.x, player.y, terrain, crossSolidAt);
   smallCrossMgr.update(player.x, player.y, terrain, crossSolidAt);
+  // Player tile map for hostile clone targeting and grenade collision (tile key → player id)
+  const allPlayerTiles = new Map<string, number>();
+  if (!player.dead) allPlayerTiles.set(`${player.tileX},${player.tileY}`, netMgr.localPlayerId);
+  for (const [pid, rp] of remotePlayers) {
+    if (!rp.dead) allPlayerTiles.set(`${rp.tileX},${rp.tileY}`, pid);
+  }
+
   const monsterSolid = {
     hasSolidAt: (c: number, r: number) =>
       slimeMgr.getEntities().some((s) => s.phase === "alive" && s.tileX === c && s.tileY === r) ||
@@ -940,7 +974,7 @@ function loop(ts: number): void {
     lavaMgr,
     treasureMgr,
     monsterSolid,
-  ]);
+  ], (c, r) => allPlayerTiles.has(`${c},${r}`));
   smallBombMgr.update(player.x, player.y, terrain);
   bigBombMgr.update(player.x, player.y, terrain);
   landmineMgr.update(player.x, player.y, terrain);
@@ -980,6 +1014,7 @@ function loop(ts: number): void {
   if (diggerBombMgr.update(player.x, player.y, terrain, detailMap)) renderer.markTerrainDirty();
   boulderMgr.update(player.x, player.y);
   const slimeSolidAt = (c: number, r: number) =>
+    wallMgr.hasSolidAt(c, r) ||
     tntMgr.hasSolidAt(c, r) ||
     bigCrossMgr.hasSolidAt(c, r) ||
     smallCrossMgr.hasSolidAt(c, r) ||
@@ -1033,7 +1068,7 @@ function loop(ts: number): void {
     }
   }
 
-  // Monster tiles set (enemies only — clones are allies, not in this set)
+  // Monster tiles set and clone AI — host only (clients get clone state via state update)
   const monsterTiles = new Set([
     ...slimeMgr
       .getEntities()
@@ -1052,10 +1087,20 @@ function loop(ts: number): void {
       .filter((g) => g.phase === "alive")
       .map((g) => `${g.tileX},${g.tileY}`),
   ]);
-  cloneMgr.update(terrain, slimeSolidAt, monsterTiles, treasureMgr.getEntities(), grenadeMgr, player.digPower, monsterApplyDig);
-  // Clones collect treasure they walk onto
-  for (const e of cloneMgr.getEntities()) {
-    if (e.phase === "alive") e.cash += treasureMgr.collectAt(e.tileX, e.tileY);
+  if (!netMgr.connected || netMgr.isHost) {
+    const cloneSolidAt = (c: number, r: number) =>
+      slimeSolidAt(c, r) || detailMap[r]?.[c]?.type === 'border';
+    const grenadeThrows = cloneMgr.update(terrain, cloneSolidAt, monsterTiles, grenadeMgr, player.digPower, monsterApplyDig, allPlayerTiles);
+    // Clones collect treasure they walk onto
+    for (const e of cloneMgr.getEntities()) {
+      if (e.phase === "alive") e.cash += treasureMgr.collectAt(e.tileX, e.tileY);
+    }
+    // HOST: broadcast clone grenade throws to clients
+    if (netMgr.connected) {
+      for (const t of grenadeThrows) {
+        netMgr.sendWeaponAct('clone_grenade', 0, 0, t.tileX, t.tileY, t.dir, false, t.color);
+      }
+    }
   }
   landmineMgr.chainDetonate(monsterTiles, terrain);
   jetpackMgr.update();
@@ -1182,6 +1227,50 @@ function loop(ts: number): void {
       player.digging = false;
     }
   }
+  // HOST: apply damage to all remote players
+  if (netMgr.connected && netMgr.isHost) {
+    for (const rp of remotePlayers.values()) {
+      if (rp.dead) continue;
+      const rpt = `${rp.tileX},${rp.tileY}`;
+      const rptt = `${rp.targetTileX},${rp.targetTileY}`;
+      const rpInFire = (cells: Set<string>) => cells.has(rpt) || cells.has(rptt);
+      const rpIsNew = (cells: Set<string>) => rpInFire(cells) && !activeFireCells.has(rpt) && !activeFireCells.has(rptt);
+      if (rpInFire(flamethrowerFire)) rp.health -= 34;
+      if (rpIsNew(flameBombFire)) rp.health -= 84;
+      if (rpIsNew(tntFire)) rp.health -= 100;
+      if (rpIsNew(bigCrossFire)) rp.health -= 200;
+      if (rpIsNew(smallCrossFire)) rp.health -= 100;
+      if (rpIsNew(grenadeFire)) rp.health -= 255;
+      if (rpIsNew(smallBombFire)) rp.health -= 60;
+      if (rpIsNew(bigBombFire)) rp.health -= 84;
+      if (rpIsNew(landmineFire)) rp.health -= 60;
+      if (rpIsNew(smallDetFire)) rp.health -= 84;
+      if (rpIsNew(bigDetFire)) rp.health -= 100;
+      if (rpIsNew(plasticFire)) rp.health -= 84;
+      if (rpIsNew(nuclearFire)) rp.health -= 255;
+      if (rpIsNew(flameBarrelFire)) rp.health -= 220;
+      if (rpIsNew(diggerBombFire)) rp.health -= 10;
+      if (rpIsNew(jumpingBombFire)) rp.health -= [60, 84, 100][Math.floor(Math.random() * 3)];
+      const rpTx = rp.tileX, rpTy = rp.tileY;
+      for (const s of slimeMgr.getEntities()) {
+        if (s.phase === 'alive' && s.tileX === rpTx && s.tileY === rpTy) rp.health -= 1;
+      }
+      for (const b of brownMgr.getEntities()) {
+        if (b.phase === 'alive' && b.tileX === rpTx && b.tileY === rpTy) rp.health -= 2;
+      }
+      for (const g of greyMgr.getEntities()) {
+        if (g.phase === 'alive' && g.tileX === rpTx && g.tileY === rpTy) rp.health -= 12;
+      }
+      for (const e of grenadierMgr.getEntities()) {
+        if (e.phase === 'alive' && e.tileX === rpTx && e.tileY === rpTy) rp.health -= 3;
+      }
+      for (const g of grenadeMgr.getEntities()) {
+        if (g.phase === 'flying' && g.tileX === rpTx && g.tileY === rpTy) rp.health -= 255;
+      }
+      rp.health = Math.max(0, rp.health);
+      if (rp.health <= 0) { rp.dead = true; rp.moving = false; rp.digging = false; }
+    }
+  }
   if (!player.dead) deathTimer = 0;
   activeFireCells = allFire;
   lavaMgr.applyFire(allFire, terrain, (c, r) => urethaneMgr.hasSolidAt(c, r) || plasticMgr.hasSolidAt(c, r));
@@ -1255,15 +1344,17 @@ function loop(ts: number): void {
   );
 
   // HOST: send terrain+detail diffs immediately, then periodic state snapshot
-  if (netMgr.connected && netMgr.isHost && prevTerrain && prevDetailType) {
+  if (netMgr.connected && netMgr.isHost && prevTerrain && prevDetailType && prevBurnedGround) {
     const changes: TerrainChange[] = [];
     for (let r = 0; r < terrain.length; r++)
       for (let c = 0; c < terrain[r].length; c++) {
         const cellType = detailMap[r][c]?.type ?? 'ground';
-        if (terrain[r][c] !== prevTerrain[r][c] || cellType !== prevDetailType[r][c]) {
-          changes.push({ col: c, row: r, solid: terrain[r][c], cellType });
+        const burned = !!detailMap[r][c]?.burnedGround;
+        if (terrain[r][c] !== prevTerrain[r][c] || cellType !== prevDetailType[r][c] || burned !== prevBurnedGround[r][c]) {
+          changes.push({ col: c, row: r, solid: terrain[r][c], cellType, burnedGround: burned || undefined });
           prevTerrain[r][c] = terrain[r][c];
           prevDetailType[r][c] = cellType;
+          prevBurnedGround[r][c] = burned;
         }
       }
     netMgr.sendTerrainChanges(changes);
@@ -1277,7 +1368,7 @@ function loop(ts: number): void {
     netMgr.sendSnapshot([
       toNetPlayer(player, netMgr.localPlayerId),
       ...[...remotePlayers.entries()].map(([pid, rp]) => toNetPlayer(rp, pid)),
-    ], netMonsters, collectPushables(), doorSwitchMgr.isOn(), doorMgr.isOpen(), collectLava());
+    ], netMonsters, collectPushables(), cloneMgr.getNetState(), doorSwitchMgr.isOn(), doorMgr.isOpen(), collectLava(), urethaneMgr.getNetState(), plasticMgr.getNetState());
   }
 
   // After render: detect game-over conditions
