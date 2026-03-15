@@ -87,9 +87,18 @@ export class UrethaneManager {
     this.entities.push({ id: this.nextId++, phase: "burning", tick: 0, centerX: tileX, centerY: tileY, cells: [[tileX, tileY]] });
   }
 
+  private _justSpread = false;
+
   private ignite(e: UrethaneEntity): void {
     e.phase = "burning";
     e.tick = 0;
+    this._justSpread = true;
+  }
+
+  justSpread(): boolean {
+    const v = this._justSpread;
+    this._justSpread = false;
+    return v;
   }
 
   private addFireAt(col: number, row: number): void {

@@ -647,14 +647,6 @@ export function generateRandomLevel(treasureCount = 30): ParsedLevel {
     terrain[MAP_HEIGHT - 1][c] = true; detailMap[MAP_HEIGHT - 1][c] = { type: "border", hp: Infinity };
   }
 
-  // generate_entrances: top-left only (1 player), arm length random 4–9
-  const clearTile = (r: number, c: number) => {
-    terrain[r][c] = false;
-    detailMap[r][c] = { type: "ground", hp: 0 };
-  };
-  for (let c = 1; c <= randInt(4, 10); c++) clearTile(1, c);
-  for (let r = 1; r <= randInt(4, 10); r++) clearTile(r, 1);
-
   return { terrain, detailMap, entities, spawnCol: 1, spawnRow: 1 };
 }
 

@@ -20,10 +20,12 @@ import {
   setTerrainTile,
   isStone,
   isDiggable,
+  isHardDigTile,
   TILE_MAX_HP,
   type TerrainTileType,
 } from "./terrain.js";
 import { loadAssets, Assets } from "./assets.js";
+import { playSound, playMenuMusic, playShopMusic, playGameMusic } from "./sound.js";
 import { TntManager, type TntPhase } from "./tnt.js";
 import { BigCrossManager } from "./bigcross.js";
 import { GrenadeManager } from "./grenade.js";
@@ -56,7 +58,7 @@ import { parseMneLevel, buildThumbnail, buildThumbnailFromParsed, LEVEL_NAMES, g
 import { CloneManager } from "./clone.js";
 import { MAX_HEALTH } from "./game.js";
 
-const splashEl   = document.getElementById("splash-screen")!;
+const splashEl = document.getElementById("splash-screen")!;
 const mainMenuEl = document.getElementById("main-menu")!;
 const infoScreenEl = document.getElementById("info-screen")!;
 const menuShovelEl = document.getElementById("menu-shovel") as HTMLImageElement;
@@ -94,43 +96,43 @@ const optTogImgs: [HTMLImageElement, HTMLImageElement][] = [
 // ── Keys redefine screen ──────────────────────────────────────────────────
 
 const keysScreenEl = document.getElementById("keys-screen")!;
-const keysRowsEl   = document.getElementById("keys-rows")!;
+const keysRowsEl = document.getElementById("keys-rows")!;
 
 const KEYS_ACTIONS: { label: string; binding: KeyActionName }[] = [
-  { label: "Left",         binding: "left"   },
-  { label: "Right",        binding: "right"  },
-  { label: "Up",           binding: "up"     },
-  { label: "Down",         binding: "down"   },
-  { label: "Stop",         binding: "stop"   },
-  { label: "Bomb / Buy",   binding: "bomb"   },
-  { label: "Choose / Sell",binding: "choose" },
-  { label: "Remote",       binding: "remote" },
+  { label: "Left", binding: "left" },
+  { label: "Right", binding: "right" },
+  { label: "Up", binding: "up" },
+  { label: "Down", binding: "down" },
+  { label: "Stop", binding: "stop" },
+  { label: "Bomb / Buy", binding: "bomb" },
+  { label: "Choose / Sell", binding: "choose" },
+  { label: "Remote", binding: "remote" },
 ];
 
 let keysCurrentRow = -1;
 let keysBoundFlags: boolean[] = new Array(8).fill(false);
 
 function keyDisplayName(code: string): string {
-  if (code === "ArrowLeft")  return "LEFT";
+  if (code === "ArrowLeft") return "LEFT";
   if (code === "ArrowRight") return "RIGHT";
-  if (code === "ArrowUp")    return "UP";
-  if (code === "ArrowDown")  return "DOWN";
+  if (code === "ArrowUp") return "UP";
+  if (code === "ArrowDown") return "DOWN";
   if (code.startsWith("Control")) return "CTRL";
-  if (code.startsWith("Shift"))   return "SHIFT";
-  if (code.startsWith("Alt"))     return "ALT";
-  if (code === "Delete")    return "DEL";
-  if (code === "End")       return "END";
-  if (code === "PageDown")  return "PGDN";
-  if (code === "PageUp")    return "PGUP";
-  if (code === "Home")      return "HOME";
-  if (code === "Insert")    return "INS";
-  if (code === "Space")     return "SPACE";
-  if (code === "Enter")     return "ENTER";
+  if (code.startsWith("Shift")) return "SHIFT";
+  if (code.startsWith("Alt")) return "ALT";
+  if (code === "Delete") return "DEL";
+  if (code === "End") return "END";
+  if (code === "PageDown") return "PGDN";
+  if (code === "PageUp") return "PGUP";
+  if (code === "Home") return "HOME";
+  if (code === "Insert") return "INS";
+  if (code === "Space") return "SPACE";
+  if (code === "Enter") return "ENTER";
   if (code === "Backspace") return "BKSP";
-  if (code === "Tab")       return "TAB";
-  if (code === "Escape")    return "ESC";
-  if (code.startsWith("Key"))    return code.slice(3);
-  if (code.startsWith("Digit"))  return code.slice(5);
+  if (code === "Tab") return "TAB";
+  if (code === "Escape") return "ESC";
+  if (code.startsWith("Key")) return code.slice(3);
+  if (code.startsWith("Digit")) return code.slice(5);
   if (code.startsWith("Numpad")) return "NP" + code.slice(6);
   const f = code.match(/^(F\d{1,2})$/);
   if (f) return f[1];
@@ -174,42 +176,56 @@ function closeKeysScreen(): void {
 const tournamentOverEl = document.getElementById("tournament-over-screen")!;
 const toCards = [0, 1, 2, 3].map((i) => document.getElementById(`to-p${i}`) as HTMLImageElement);
 const toNames = [0, 1, 2, 3].map((i) => document.getElementById(`to-n${i}`) as HTMLSpanElement);
-const toCash  = [0, 1, 2, 3].map((i) => document.getElementById(`to-c${i}`) as HTMLSpanElement);
-const toWins  = [0, 1, 2, 3].map((i) => document.getElementById(`to-w${i}`) as HTMLSpanElement);
+const toCash = [0, 1, 2, 3].map((i) => document.getElementById(`to-c${i}`) as HTMLSpanElement);
+const toWins = [0, 1, 2, 3].map((i) => document.getElementById(`to-w${i}`) as HTMLSpanElement);
 document.getElementById("to-click-hit")!.addEventListener("click", () => openMainMenu());
 
 interface TournamentStat {
   name: string;
   color: number;
-  totalCash: number;   // player's current gold balance (startingCash + earnings - purchases)
+  totalCash: number; // player's current gold balance (startingCash + earnings - purchases)
   roundsWon: number;
   active: boolean;
 }
 // Indexed by slot (= player.color = 0–3)
 const tournamentSlots: TournamentStat[] = [0, 1, 2, 3].map((c) => ({
-  name: "", color: c, totalCash: 0, roundsWon: 0, active: false,
+  name: "",
+  color: c,
+  totalCash: 0,
+  roundsWon: 0,
+  active: false,
 }));
 
 function resetTournamentSlots(): void {
   for (const s of tournamentSlots) {
-    s.name = ""; s.totalCash = 0; s.roundsWon = 0; s.active = false;
+    s.name = "";
+    s.totalCash = 0;
+    s.roundsWon = 0;
+    s.active = false;
   }
 }
 
 function setSlotActive(color: number, name: string): void {
   const s = tournamentSlots[color];
   if (!s) return;
-  if (!s.active) { s.name = name; s.active = true; }
-  else if (name) s.name = name;
+  if (!s.active) {
+    s.name = name;
+    s.active = true;
+  } else if (name) s.name = name;
 }
 
 function openTournamentOverScreen(): void {
   // Host: broadcast final standings, then disconnect after a short delay so the message flushes
   if (netMgr.connected && netMgr.isHost) {
-    netMgr.sendTournamentOver(tournamentSlots.map(s => ({
-      name: s.name, color: s.color, totalCash: s.totalCash,
-      roundsWon: s.roundsWon, active: s.active,
-    })));
+    netMgr.sendTournamentOver(
+      tournamentSlots.map((s) => ({
+        name: s.name,
+        color: s.color,
+        totalCash: s.totalCash,
+        roundsWon: s.roundsWon,
+        active: s.active,
+      })),
+    );
     setTimeout(() => netMgr.disconnect(), 600);
   } else if (netMgr.connected) {
     // Client: disconnect immediately (host already sent standings)
@@ -218,15 +234,14 @@ function openTournamentOverScreen(): void {
 
   // Determine per-player result: win = 1st place, draw = 2nd place, lose = rest
   const active = tournamentSlots.filter((s) => s.active);
-  const score = (s: TournamentStat) =>
-    tournamentConfig.winCondition === "wins" ? s.roundsWon : s.totalCash;
+  const score = (s: TournamentStat) => (tournamentConfig.winCondition === "wins" ? s.roundsWon : s.totalCash);
   const sortedScores = [...new Set(active.map(score))].sort((a, b) => b - a);
-  const firstScore  = sortedScores[0] ?? 0;
+  const firstScore = sortedScores[0] ?? 0;
   const secondScore = sortedScores[1] ?? null;
-  const soloWinner  = active.filter((s) => score(s) === firstScore).length === 1;
+  const soloWinner = active.filter((s) => score(s) === firstScore).length === 1;
   // draw tier: tied-for-first (when not solo) OR second place
-  const drawScore   = soloWinner ? secondScore : firstScore;
-  const winScore    = soloWinner ? firstScore  : null; // no winner if tied at top
+  const drawScore = soloWinner ? secondScore : firstScore;
+  const winScore = soloWinner ? firstScore : null; // no winner if tied at top
 
   for (let i = 0; i < 4; i++) {
     const s = tournamentSlots[i];
@@ -249,6 +264,7 @@ function openTournamentOverScreen(): void {
   }
 
   tournamentOverEl.style.display = "flex";
+  playSound("APPLAUSE", 0);
 }
 
 const levelData = new Map<string, Uint8Array>();
@@ -322,21 +338,25 @@ const tournamentConfig = {
 // ── Persistence ───────────────────────────────────────────────────────────────
 
 function saveSettings(): void {
-  localStorage.setItem('mb_config', JSON.stringify(tournamentConfig));
-  localStorage.setItem('mb_player_name', shopNameInput.value);
+  localStorage.setItem("mb_config", JSON.stringify(tournamentConfig));
+  localStorage.setItem("mb_player_name", shopNameInput.value);
 }
 
 function loadSettings(): void {
   try {
-    const raw = localStorage.getItem('mb_config');
+    const raw = localStorage.getItem("mb_config");
     if (raw) Object.assign(tournamentConfig, JSON.parse(raw));
-  } catch { /* ignore */ }
-  const savedName = localStorage.getItem('mb_player_name');
+  } catch {
+    /* ignore */
+  }
+  const savedName = localStorage.getItem("mb_player_name");
   if (savedName) shopNameInput.value = savedName;
   try {
-    const rawKeys = localStorage.getItem('mb_keybindings');
+    const rawKeys = localStorage.getItem("mb_keybindings");
     if (rawKeys) input.setBindings(JSON.parse(rawKeys) as Partial<KeyBindings>);
-  } catch { /* ignore */ }
+  } catch {
+    /* ignore */
+  }
 }
 
 const OPT_DEFAULTS = {
@@ -444,10 +464,14 @@ function optFrameCoords(e: MouseEvent): { x: number; y: number } {
 }
 
 function optNearestIdx(frameY: number): number {
-  let best = 0, bestDist = Infinity;
+  let best = 0,
+    bestDist = Infinity;
   for (let i = 0; i < OPT_ITEMS.length; i++) {
     const d = Math.abs(OPT_ITEMS[i].rowY - frameY);
-    if (d < bestDist) { bestDist = d; best = i; }
+    if (d < bestDist) {
+      bestDist = d;
+      best = i;
+    }
   }
   return best;
 }
@@ -471,9 +495,11 @@ optFrameEl.addEventListener("click", (e) => {
   } else if (item.type === "winner") {
     tournamentConfig.winCondition = tournamentConfig.winCondition === "money" ? "wins" : "money";
   } else if (item.type === "keys") {
-    openKeysScreen(); return;
+    openKeysScreen();
+    return;
   } else if (item.type === "action") {
-    openMainMenu(); return;
+    openMainMenu();
+    return;
   }
   renderOptions();
   saveSettings();
@@ -530,7 +556,7 @@ function getEffectivePrice(basePrice: number): number {
 }
 
 function bombDmg(base: number): number {
-  return Math.round(base * tournamentConfig.bombDamagePct / 100);
+  return Math.round((base * tournamentConfig.bombDamagePct) / 100);
 }
 
 function updateShopPrices(): void {
@@ -699,8 +725,7 @@ function startGameFromLobby(): void {
 
     if (!isLoadedMap) {
       const clearSpawnTile = (r: number, c: number) => {
-        if (r > 0 && c > 0 && r < MAP_HEIGHT - 1 && c < MAP_WIDTH - 1)
-          setTerrainTile(detailMap, terrain, c, r, "ground");
+        if (r > 0 && c > 0 && r < MAP_HEIGHT - 1 && c < MAP_WIDTH - 1) setTerrainTile(detailMap, terrain, c, r, "ground");
       };
       const armLen = () => 4 + Math.floor(Math.random() * 6); // 4–9 tiles, same as level generator
       for (const pid of allPids) {
@@ -735,9 +760,21 @@ function startGameFromLobby(): void {
     prevDetailType = detailMap.map((row) => row.map((c) => c.type));
     prevBurnedGround = detailMap.map((row) => row.map((c) => !!c.burnedGround));
   } else {
-    // Offline: assign a random corner for the solo player
+    // Offline: assign a random corner for the solo player and clear their spawn
     assignRandomSpawns([1]);
     const [tx, ty] = spawnPos(1);
+    if (!isLoadedMap) {
+      const hSign = tx === 1 ? 1 : -1;
+      const vSign = ty === 1 ? 1 : -1;
+      const armLen = () => 4 + Math.floor(Math.random() * 6);
+      const hLen = armLen(), vLen = armLen();
+      const clearSpawnTile = (r: number, c: number) => {
+        if (r > 0 && c > 0 && r < MAP_HEIGHT - 1 && c < MAP_WIDTH - 1) setTerrainTile(detailMap, terrain, c, r, "ground");
+      };
+      for (let i = 0; i <= hLen; i++) clearSpawnTile(ty, tx + i * hSign);
+      for (let i = 1; i <= vLen; i++) clearSpawnTile(ty + i * vSign, tx);
+      renderer.markTerrainDirty();
+    }
     player.x = tx * TILE_SIZE;
     player.y = ty * TILE_SIZE;
     player.tileX = tx;
@@ -867,18 +904,15 @@ function spawnPos(playerId: number): [number, number] {
 }
 
 function assignRandomSpawns(playerIds: number[]): Array<{ playerId: number; col: number; row: number }> {
-  // Fisher-Yates shuffle of the 4 corners, then assign first N to the N players
-  const corners = [...CORNER_POSITIONS] as [number, number][];
-  for (let i = corners.length - 1; i > 0; i--) {
-    const j = Math.floor(Math.random() * (i + 1));
-    [corners[i], corners[j]] = [corners[j], corners[i]];
-  }
+  const available = [...CORNER_POSITIONS] as [number, number][];
   playerSpawnMap.clear();
   const result: Array<{ playerId: number; col: number; row: number }> = [];
-  for (let i = 0; i < playerIds.length; i++) {
-    const [col, row] = corners[i];
-    playerSpawnMap.set(playerIds[i], [col, row]);
-    result.push({ playerId: playerIds[i], col, row });
+  for (const playerId of playerIds) {
+    const idx = Math.floor(Math.random() * available.length);
+    const [col, row] = available[idx];
+    available.splice(idx, 1); // remove so no other player can get the same corner
+    playerSpawnMap.set(playerId, [col, row]);
+    result.push({ playerId, col, row });
   }
   return result;
 }
@@ -1311,7 +1345,9 @@ function startGame(): void {
 
   shopEl.style.display = "none";
   gameEl.style.display = "flex";
+  hadTreasure = treasureMgr.getEntities().length > 0;
   loopActive = true;
+  playGameMusic();
   requestAnimationFrame(loop);
 }
 
@@ -1453,6 +1489,7 @@ function returnToLobby(clientBankedCash?: number): void {
   }
 
   loopActive = false;
+  playShopMusic();
   gameEl.style.display = "none";
   player.health = MAX_HEALTH;
   player.dead = false;
@@ -1477,6 +1514,7 @@ loadAssets()
     assets = a;
     renderer.initPatterns(assets);
     assetsReady = true;
+    playShopMusic();
   })
   .catch(() => {
     // assets failed silently — game will stay on shop screen
@@ -1500,6 +1538,7 @@ function updateShovel(): void {
 }
 
 function openMainMenu(): void {
+  playMenuMusic();
   mainMenuEl.style.display = "flex";
   optionsScreenEl.style.display = "none";
   infoScreenEl.style.display = "none";
@@ -1711,7 +1750,10 @@ document.getElementById("info-click-hit")!.addEventListener("click", () => infoN
 {
   let splashTimer: ReturnType<typeof setTimeout> | null = setTimeout(dismissSplash, 3000);
   function dismissSplash() {
-    if (splashTimer !== null) { clearTimeout(splashTimer); splashTimer = null; }
+    if (splashTimer !== null) {
+      clearTimeout(splashTimer);
+      splashTimer = null;
+    }
     splashEl.style.display = "none";
     openMainMenu();
     window.removeEventListener("keydown", dismissSplash, true);
@@ -1727,6 +1769,7 @@ netMgr.onAssign = (playerId, isHost) => {
   createGameEl.style.display = "none";
   joinGameEl.style.display = "none";
   shopEl.style.display = "flex";
+  playShopMusic();
 
   const name = shopNameInput.value.trim() || "Player";
   player.name = name;
@@ -2058,6 +2101,7 @@ let prevTileX = player.tileX;
 let prevTileY = player.tileY;
 let activeFireCells = new Set<string>();
 let deathTimer = 0;
+let hadTreasure = false;
 const DEATH_DELAY_FRAMES = 2 * 60;
 let loopActive = false;
 
@@ -2149,9 +2193,7 @@ function loop(ts: number): void {
         }
         const prevRpTileX = rp.tileX,
           prevRpTileY = rp.tileY;
-        const rpMoveSpeed = rp.digging
-          ? Math.min(PLAYER_SPEED + Math.floor(rp.digPower * 0.75), TILE_SIZE - 1)
-          : jetpackMgr.getSpeed();
+        const rpMoveSpeed = rp.digging ? Math.min(PLAYER_SPEED + Math.floor(rp.digPower * 0.75), TILE_SIZE - 1) : jetpackMgr.getSpeed();
         updatePlayer(rp, rdir, false, terrain, weaponMgrs, rpMoveSpeed, pushBlocker);
         if (rp.tileX !== prevRpTileX || rp.tileY !== prevRpTileY) {
           const rpDest = teleportMgr.tryTeleport(rp.tileX, rp.tileY);
@@ -2224,6 +2266,18 @@ function loop(ts: number): void {
   // Clear digging if player started moving (tile became passable mid-dig)
   if (player.moving) player.digging = false;
 
+  // Pickaxe sound — local player and all remote players digging hard tiles
+  const checkDigSound = (digging: boolean, dir: string, tileX: number, tileY: number) => {
+    if (!digging) return;
+    const dc = dir === "right" ? 1 : dir === "left" ? -1 : 0;
+    const dr = dir === "down" ? 1 : dir === "up" ? -1 : 0;
+    const cell = detailMap[tileY + dr]?.[tileX + dc];
+    if (cell && isHardDigTile(cell.type)) playSound("PICAXE", 350, 1);
+  };
+  checkDigSound(player.digging, player.dir, player.tileX, player.tileY);
+  for (const rp of remotePlayers.values()) {
+    checkDigSound(rp.digging, rp.dir, rp.tileX, rp.tileY);
+  }
   // Apply dig damage — only on host (clients receive terrain changes via onTerrainChange)
   if (player.digging && (!netMgr.connected || netMgr.isHost)) {
     const dc = inputDir === "right" ? 1 : inputDir === "left" ? -1 : 0;
@@ -2581,9 +2635,15 @@ function loop(ts: number): void {
       monsterApplyDig,
       allPlayerTiles,
     );
-    // Clones collect treasure they walk onto
+    // Clones collect treasure they walk onto; play pickaxe sound when digging hard tiles
     for (const e of cloneMgr.getEntities()) {
-      if (e.phase === "alive") e.cash += treasureMgr.collectAt(e.tileX, e.tileY);
+      if (e.phase === "alive") {
+        e.cash += treasureMgr.collectAt(e.tileX, e.tileY);
+        if (e.digging) {
+          const cell = detailMap[e.digTileY]?.[e.digTileX];
+          if (cell && isHardDigTile(cell.type)) playSound("PICAXE", 350, 1);
+        }
+      }
     }
     // HOST: broadcast clone grenade throws to clients
     if (netMgr.connected) {
@@ -2595,7 +2655,9 @@ function loop(ts: number): void {
   landmineMgr.chainDetonate(monsterTiles, terrain);
   jetpackMgr.update();
   if (tileChanged) {
-    player.cash += treasureMgr.update(player.tileX, player.tileY);
+    const _treasureEarned = treasureMgr.update(player.tileX, player.tileY);
+    if (_treasureEarned > 0) playSound("KILI");
+    player.cash += _treasureEarned;
     pickableMgr.consumeByMonsters([
       ...slimeMgr.getEntities().filter((e) => e.phase === "alive"),
       ...brownMgr.getEntities().filter((e) => e.phase === "alive"),
@@ -2659,6 +2721,17 @@ function loop(ts: number): void {
   const nuclearTerrainFire = new Set([...nuclearFire].filter((k) => !noTerrainFire.has(k)));
   const newNormalCells = new Set([...nonNuclearTerrainFire].filter((k) => !activeFireCells.has(k)));
   const newNuclearCells = new Set([...nuclearTerrainFire].filter((k) => !activeFireCells.has(k)));
+  // ── Sound: explosion triggers ─────────────────────────────────────────────
+  {
+    const hasNew = (fire: Set<string>) => fire.size > 0 && [...fire].some((k) => newNormalCells.has(k));
+    if (hasNew(smallBombFire) || hasNew(bigBombFire) || hasNew(landmineFire)) playSound("PIKKUPOM", 80, 0.2);
+    if (hasNew(smallCrossFire) || hasNew(smallDetFire) || hasNew(plasticFire) || hasNew(flameBarrelFire)) playSound("EXPLOS1", 80, 0.03);
+    if (hasNew(tntFire) || hasNew(bigDetFire) || hasNew(bigCrossFire) || hasNew(teleportMgr.getFireCells())) playSound("EXPLOS2", 80, 0.03);
+    if (nuclearFire.size > 0 && [...nuclearFire].some((k) => newNuclearCells.has(k))) playSound("EXPLOS3", 80, 0.03);
+    if (flamethrowerFire.size > 0) playSound("EXPLOS4", 300, 0.1);
+    if (hasNew(diggerBombFire) || hasNew(flameBombFire)) playSound("EXPLOS5", 80, 0.1);
+    if (urethaneMgr.justSpread()) playSound("URETHAN", 80, 0.2);
+  }
   if (applyExplosionToTerrain(newNormalCells, allFire, terrain, detailMap)) renderer.markTerrainDirty();
   if (applyExplosionToTerrain(newNuclearCells, allFire, terrain, detailMap, true)) renderer.markTerrainDirty();
   // Boulders hit by explosion fire become rock_destroyed_2 — must run AFTER applyExplosionToTerrain
@@ -2716,6 +2789,7 @@ function loop(ts: number): void {
       player.dead = true;
       player.moving = false;
       player.digging = false;
+      playSound("AARGH");
     }
   }
   // HOST: apply damage to all remote players
@@ -2764,6 +2838,7 @@ function loop(ts: number): void {
         rp.dead = true;
         rp.moving = false;
         rp.digging = false;
+        playSound("AARGH");
         // Kill reward: local (host) player earns 400–600 cash
         if (!player.dead) player.cash += 400 + Math.floor(Math.random() * 201);
       }
@@ -2862,7 +2937,7 @@ function loop(ts: number): void {
     gameInventory.get(selectedWeapon) ?? 0,
     roundTick,
     tournamentConfig.timeLimitSec * 60,
-    playerGold + player.cash,  // HUD: banked cash + round gold
+    playerGold + player.cash, // HUD: banked cash + round gold
   );
 
   // HOST: send terrain+detail diffs immediately, then periodic state snapshot
@@ -2975,7 +3050,8 @@ function loop(ts: number): void {
     const allPlayers = [player, ...remotePlayers.values()];
     const survivors = allPlayers.filter((p) => !p.dead);
     const isMultiplayer = remotePlayers.size > 0;
-    const roundOver = survivors.length === 0 || (isMultiplayer && survivors.length === 1);
+    const noTreasureLeft = hadTreasure && treasureMgr.getEntities().length === 0;
+    const roundOver = survivors.length === 0 || (isMultiplayer && survivors.length === 1) || noTreasureLeft;
 
     if (roundOver) {
       deathTimer++;
