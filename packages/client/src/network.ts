@@ -7,6 +7,7 @@ export interface RemoteInput {
   actions: string[];
   digPower: number;
   gold: number;
+  seq: number;
 }
 
 export class NetworkManager {
@@ -34,7 +35,8 @@ export class NetworkManager {
   private ws: WebSocket | null = null;
   private gameTick = 0;
   private remoteInputs = new Map<number, RemoteInput>();
-  private readonly SNAPSHOT_EVERY = 1;
+  private lastRemoteInputSeq = new Map<number, number>();
+  private readonly SNAPSHOT_EVERY = 3;
 
   connect(serverUrl: string): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -88,7 +90,9 @@ export class NetworkManager {
         break;
       case 'input':
         if (msg.fromPlayerId !== undefined) {
-          this.remoteInputs.set(msg.fromPlayerId, { dir: msg.dir, actions: msg.actions, digPower: msg.digPower ?? 1, gold: msg.gold ?? 0 });
+          const seq = (msg as unknown as { seq?: number }).seq ?? 0;
+          this.remoteInputs.set(msg.fromPlayerId, { dir: msg.dir, actions: msg.actions, digPower: msg.digPower ?? 1, gold: msg.gold ?? 0, seq });
+          this.lastRemoteInputSeq.set(msg.fromPlayerId, seq);
         }
         break;
       case 'item_remove':
@@ -127,7 +131,9 @@ export class NetworkManager {
   sendSnapshot(players: NetPlayer[], monsters: NetMonster[], pushables: NetPushable[], clones: NetClone[], doorSwitchOn: boolean, doorOpen: boolean, lava: Array<{ id: number; cells: [number, number][] }>, urethane: Array<{ id: number; phase: string; cells: [number, number][] }>, plastic: Array<{ id: number; phase: string; armedCells: [number, number][]; explosionCells: [number, number][] }>, roundTick: number): void {
     this.gameTick++;
     if (this.gameTick % this.SNAPSHOT_EVERY !== 0) return;
-    this.send({ type: 'state', tick: this.gameTick, roundTick, players, monsters, pushables, clones, doorSwitchOn, doorOpen, lava, urethane, plastic });
+    const msg = { type: 'state', tick: this.gameTick, roundTick, players, monsters, pushables, clones, doorSwitchOn, doorOpen, lava, urethane, plastic };
+    if (this.gameTick % 60 === 0) console.log(`[snapshot] ~${JSON.stringify(msg).length} bytes`);
+    this.send(msg);
   }
 
   // HOST: send terrain+detail tile changes immediately
@@ -188,13 +194,18 @@ export class NetworkManager {
   }
 
   // CLIENT: send direction + weapon actions to host each frame
-  sendInput(dir: NetDir, actions: string[], digPower: number, gold: number): void {
-    this.send({ type: 'input', dir, actions, digPower, gold });
+  sendInput(dir: NetDir, actions: string[], digPower: number, gold: number, seq = 0): void {
+    this.send({ type: 'input', dir, actions, digPower, gold, seq } as unknown as NetMsg);
   }
 
   // HOST: read latest input from a remote player
   getRemoteInput(playerId: number): RemoteInput {
-    return this.remoteInputs.get(playerId) ?? { dir: 'none', actions: [], digPower: 1, gold: 0 };
+    return this.remoteInputs.get(playerId) ?? { dir: 'none', actions: [], digPower: 1, gold: 0, seq: 0 };
+  }
+
+  // HOST: get last acknowledged input seq for a remote player
+  getLastRemoteInputSeq(playerId: number): number {
+    return this.lastRemoteInputSeq.get(playerId) ?? 0;
   }
 
   // HOST: clear actions after processing (actions are edge-triggered — one per press)

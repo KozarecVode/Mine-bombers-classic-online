@@ -551,6 +551,12 @@ let roundsWon = 0;
 let roundTick = 0;
 let priceMultiplier = 1.0;
 
+// Client-side prediction
+let inputSeq = 0;
+interface InputSnapshot { seq: number; dir: Dir; stopPressed: boolean; }
+const inputBuffer: InputSnapshot[] = [];
+let pendingHostPlayerState: import("@minebombers/shared").NetPlayer | null = null;
+
 function getEffectivePrice(basePrice: number): number {
   return basePrice < 0 ? basePrice : Math.round(basePrice * priceMultiplier);
 }
@@ -739,6 +745,13 @@ function startGameFromLobby(): void {
       }
     }
     renderer.markTerrainDirty();
+    // Update remote players to their assigned spawn positions on the host
+    for (const [pid, rp] of remotePlayers) {
+      const [sx, sy] = spawnPos(pid);
+      rp.x = sx * TILE_SIZE; rp.y = sy * TILE_SIZE;
+      rp.tileX = sx; rp.tileY = sy;
+      rp.targetTileX = sx; rp.targetTileY = sy;
+    }
     const [tx, ty] = spawnPos(netMgr.localPlayerId);
     player.x = tx * TILE_SIZE;
     player.y = ty * TILE_SIZE;
@@ -767,7 +780,8 @@ function startGameFromLobby(): void {
       const hSign = tx === 1 ? 1 : -1;
       const vSign = ty === 1 ? 1 : -1;
       const armLen = () => 4 + Math.floor(Math.random() * 6);
-      const hLen = armLen(), vLen = armLen();
+      const hLen = armLen(),
+        vLen = armLen();
       const clearSpawnTile = (r: number, c: number) => {
         if (r > 0 && c > 0 && r < MAP_HEIGHT - 1 && c < MAP_WIDTH - 1) setTerrainTile(detailMap, terrain, c, r, "ground");
       };
@@ -917,7 +931,7 @@ function assignRandomSpawns(playerIds: number[]): Array<{ playerId: number; col:
   return result;
 }
 
-function toNetPlayer(p: LocalPlayer, id: number): NetPlayer {
+function toNetPlayer(p: LocalPlayer, id: number, lastInputSeq = 0): NetPlayer {
   return {
     id,
     x: p.x,
@@ -936,6 +950,7 @@ function toNetPlayer(p: LocalPlayer, id: number): NetPlayer {
     name: p.name,
     cash: p.cash,
     digPower: p.digPower,
+    lastInputSeq,
   };
 }
 
@@ -1184,6 +1199,25 @@ const WEAPONS = [
 type WeaponName = (typeof WEAPONS)[number];
 let selectedWeapon: WeaponName = "tnt";
 
+const RANDOM_WEAPON_POOL: WeaponName[] = [
+  "bigbomb",
+  "smallbomb",
+  "nuclear",
+  "tnt",
+  "bigcross",
+  "smallcross",
+  "flamethrower",
+  "grenade",
+  "landmine",
+  "barrel",
+  "bigdetonate",
+  "smalldetonate",
+  "plastic",
+  "urethane",
+  "teleport",
+  "lava",
+];
+
 // Items that cost gold in the shop and have inventory limits
 const SHOP_WEAPON_IDS = new Set<string>(SHOP_ITEMS.filter((i) => i.price >= 0 && i.id !== "__ready__").map((i) => i.id));
 
@@ -1343,6 +1377,7 @@ function startGame(): void {
   // Ensure selected weapon is one the player owns
   if (!canUseWeapon(selectedWeapon)) selectedWeapon = nextAvailableWeapon(selectedWeapon);
 
+  input.flush();
   shopEl.style.display = "none";
   gameEl.style.display = "flex";
   hadTreasure = treasureMgr.getEntities().length > 0;
@@ -1602,12 +1637,15 @@ function selectMenuItem(): void {
       openInfoScreen();
       break;
     case "quit":
-      break; // can't quit in browser
+      (window as any).electronAPI?.quit();
+      break;
   }
 }
 
 // Keyboard handling for main menu, shop, and info screen
 document.addEventListener("keydown", (e) => {
+  // Ignore ESC entirely while the game is running
+  if (e.key === "Escape" && loopActive) return;
   // Tournament over screen
   if (tournamentOverEl.style.display !== "none") {
     if (e.key === "Escape" || e.key === "Enter" || e.key === " ") openMainMenu();
@@ -1926,16 +1964,9 @@ netMgr.onStateUpdate = (players, monsters, pushables, clones, doorSwitchOn, door
     if (np.id === netMgr.localPlayerId) {
       player.health = np.health;
       player.cash = np.cash;
-      if (np.dead && !player.dead) {
-        player.dead = true;
-        player.moving = false;
-      }
-      if (Math.abs(player.tileX - np.tileX) > 2 || Math.abs(player.tileY - np.tileY) > 2) {
-        player.x = np.x;
-        player.y = np.y;
-        player.tileX = np.tileX;
-        player.tileY = np.tileY;
-      }
+      if (np.dead && !player.dead) { player.dead = true; player.moving = false; }
+      // Queue reconciliation — applied in game loop where weaponMgrs are accessible
+      if (!player.dead) pendingHostPlayerState = np;
     } else {
       if (!remotePlayers.has(np.id)) {
         const [tx, ty] = spawnPos(np.id);
@@ -2170,7 +2201,40 @@ function loop(ts: number): void {
   const playerMoveSpeed = player.digging
     ? Math.min(PLAYER_SPEED + Math.floor(player.digPower * 0.75), TILE_SIZE - 1)
     : jetpackMgr.getSpeed();
-  updatePlayer(player, inputDir, input.consumeStopPress(), terrain, weaponMgrs, playerMoveSpeed, pushBlocker);
+  const stopPressed = input.consumeStopPress();
+  updatePlayer(player, inputDir, stopPressed, terrain, weaponMgrs, playerMoveSpeed, pushBlocker);
+
+  // CLIENT: reconcile position against host's last confirmed state + unconfirmed inputs
+  if (netMgr.connected && !netMgr.isHost && pendingHostPlayerState) {
+    const np = pendingHostPlayerState;
+    pendingHostPlayerState = null;
+    const lastAcked = np.lastInputSeq ?? 0;
+    // Trim confirmed inputs
+    while (inputBuffer.length > 0 && inputBuffer[0].seq <= lastAcked) inputBuffer.shift();
+    // Re-simulate from host's confirmed position
+    const ghost: LocalPlayer = {
+      x: np.x, y: np.y, tileX: np.tileX, tileY: np.tileY,
+      targetTileX: np.targetTileX, targetTileY: np.targetTileY,
+      dir: np.dir as Dir, moving: np.moving, digging: np.digging,
+      pendingStop: false, animFrame: 0, animTick: 0,
+      color: player.color, name: player.name, cash: player.cash,
+      health: player.health, digPower: player.digPower, dead: player.dead,
+    };
+    for (const inp of inputBuffer) {
+      updatePlayer(ghost, inp.dir, inp.stopPressed, terrain, weaponMgrs, playerMoveSpeed, pushBlocker);
+    }
+    // Apply reconciled position — snap only if significantly off
+    const dx = Math.abs(player.x - ghost.x), dy = Math.abs(player.y - ghost.y);
+    if (dx > TILE_SIZE * 3 || dy > TILE_SIZE * 3) {
+      player.x = ghost.x; player.y = ghost.y;
+    } else if (dx > 2 || dy > 2) {
+      player.x += (ghost.x - player.x) * 0.3;
+      player.y += (ghost.y - player.y) * 0.3;
+    }
+    player.tileX = ghost.tileX; player.tileY = ghost.tileY;
+    player.targetTileX = ghost.targetTileX; player.targetTileY = ghost.targetTileY;
+    player.moving = ghost.moving; player.dir = ghost.dir;
+  }
 
   // HOST: update remote players with their received inputs
   if (netMgr.connected && netMgr.isHost) {
@@ -2272,7 +2336,7 @@ function loop(ts: number): void {
     const dc = dir === "right" ? 1 : dir === "left" ? -1 : 0;
     const dr = dir === "down" ? 1 : dir === "up" ? -1 : 0;
     const cell = detailMap[tileY + dr]?.[tileX + dc];
-    if (cell && isHardDigTile(cell.type)) playSound("PICAXE", 350, 1);
+    if (cell && isHardDigTile(cell.type)) playSound("PICAXE", 350, 0.1);
   };
   checkDigSound(player.digging, player.dir, player.tileX, player.tileY);
   for (const rp of remotePlayers.values()) {
@@ -2324,7 +2388,10 @@ function loop(ts: number): void {
     if (!player.dead && input.consumeDetonatePress()) netActions.push("__detonate__");
     if (!player.dead && input.consumeFireExtPress() && canUseWeapon("fireextinguisher")) netActions.push("__fireext__");
     input.consumeTreasurePress();
-    netMgr.sendInput(inputDir as NetDir, netActions, player.digPower, playerGold);
+    inputSeq++;
+    inputBuffer.push({ seq: inputSeq, dir: inputDir as Dir, stopPressed: false });
+    if (inputBuffer.length > 128) inputBuffer.shift();
+    netMgr.sendInput(inputDir as NetDir, netActions, player.digPower, playerGold, inputSeq);
     // Mirror weapon placement locally so bombs/explosions are visible on client
     if (!player.dead && netActions.includes(selectedWeapon)) {
       consumeWeapon(selectedWeapon);
@@ -2641,7 +2708,7 @@ function loop(ts: number): void {
         e.cash += treasureMgr.collectAt(e.tileX, e.tileY);
         if (e.digging) {
           const cell = detailMap[e.digTileY]?.[e.digTileX];
-          if (cell && isHardDigTile(cell.type)) playSound("PICAXE", 350, 1);
+          if (cell && isHardDigTile(cell.type)) playSound("PICAXE", 350, 0.1);
         }
       }
     }
@@ -2669,7 +2736,11 @@ function loop(ts: number): void {
       else if (type === "dig_power_2") player.digPower += 3;
       else if (type === "dig_power_3") player.digPower += 5;
       else if (type === "medpac") player.health = MAX_HEALTH;
-      else if (type === "random_weapon") selectedWeapon = WEAPONS[Math.floor(Math.random() * WEAPONS.length)];
+      else if (type === "random_weapon") {
+        const w = RANDOM_WEAPON_POOL[Math.floor(Math.random() * RANDOM_WEAPON_POOL.length)];
+        gameInventory.set(w, (gameInventory.get(w) ?? 0) + 1);
+        selectedWeapon = w;
+      }
     }
   }
 
@@ -2726,7 +2797,7 @@ function loop(ts: number): void {
     const hasNew = (fire: Set<string>) => fire.size > 0 && [...fire].some((k) => newNormalCells.has(k));
     if (hasNew(smallBombFire) || hasNew(bigBombFire) || hasNew(landmineFire)) playSound("PIKKUPOM", 80, 0.2);
     if (hasNew(smallCrossFire) || hasNew(smallDetFire) || hasNew(plasticFire) || hasNew(flameBarrelFire)) playSound("EXPLOS1", 80, 0.03);
-    if (hasNew(tntFire) || hasNew(bigDetFire) || hasNew(bigCrossFire) || hasNew(teleportMgr.getFireCells())) playSound("EXPLOS2", 80, 0.03);
+    if (hasNew(tntFire) || hasNew(bigDetFire) || hasNew(bigCrossFire) || hasNew(teleportMgr.getFireCells()) || hasNew(jumpingBombFire)) playSound("EXPLOS2", 80, 0.03);
     if (nuclearFire.size > 0 && [...nuclearFire].some((k) => newNuclearCells.has(k))) playSound("EXPLOS3", 80, 0.03);
     if (flamethrowerFire.size > 0) playSound("EXPLOS4", 300, 0.1);
     if (hasNew(diggerBombFire) || hasNew(flameBombFire)) playSound("EXPLOS5", 80, 0.1);
@@ -3032,7 +3103,7 @@ function loop(ts: number): void {
       })),
     ];
     netMgr.sendSnapshot(
-      [toNetPlayer(player, netMgr.localPlayerId), ...[...remotePlayers.entries()].map(([pid, rp]) => toNetPlayer(rp, pid))],
+      [toNetPlayer(player, netMgr.localPlayerId), ...[...remotePlayers.entries()].map(([pid, rp]) => toNetPlayer(rp, pid, netMgr.getLastRemoteInputSeq(pid)))],
       netMonsters,
       collectPushables(),
       cloneMgr.getNetState(),

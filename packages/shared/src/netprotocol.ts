@@ -63,6 +63,7 @@ export interface NetPlayer {
   name: string;
   cash: number;
   digPower: number;
+  lastInputSeq?: number; // host echoes back last processed input seq for reconciliation
 }
 
 /** A player entry shown in the pre-game lobby */

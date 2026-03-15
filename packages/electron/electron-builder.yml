@@ -1,0 +1,25 @@
+appId: com.minebombers.game
+productName: MineBombers
+
+directories:
+  output: ../../dist-electron
+
+files:
+  - dist/main.js
+  - app/**
+  - package.json
+
+win:
+  target:
+    - target: dir
+      arch: [x64]
+
+mac:
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+
+linux:
+  target:
+    - target: AppImage
+      arch: [x64]

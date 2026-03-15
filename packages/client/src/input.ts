@@ -126,4 +126,15 @@ export class InputManager {
   consumeTreasurePress(): boolean {
     const v = this._treasurePressed; this._treasurePressed = false; return v;
   }
+
+  /** Clear all buffered presses — call before starting a game round. */
+  flush(): void {
+    this._tntPressed = false;
+    this._bigCrossPressed = false;
+    this._weaponSwitchPressed = false;
+    this._stopPressed = false;
+    this._fireExtPressed = false;
+    this._detonatePressed = false;
+    this._treasurePressed = false;
+  }
 }
