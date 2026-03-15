@@ -72,10 +72,10 @@ export class GreyManager {
     });
   }
 
-  applyFire(fireCells: Set<string>): void {
+  applyFire(fireCells: Set<string>, damage: number = 1): void {
     for (const g of this.greys) {
       if (g.phase !== 'alive' || !fireCells.has(`${g.tileX},${g.tileY}`)) continue;
-      g.hp--;
+      g.hp -= damage;
       if (g.hp <= 0) { g.phase = 'dead'; g.moving = false; g.digging = false; }
     }
   }
@@ -165,6 +165,10 @@ export class GreyManager {
 
   getEntities(): GreyEntity[] {
     return this.greys;
+  }
+
+  clear(): void {
+    this.greys = [];
   }
 
   applyNetState(monsters: NetMonster[]): void {

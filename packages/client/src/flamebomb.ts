@@ -159,4 +159,9 @@ export class FlameBombManager {
   }
 
   getEntities(): FlameBombEntity[] { return this.entities; }
+
+  clear(): void {
+    this.entities = [];
+    this.nextId = 0;
+  }
 }

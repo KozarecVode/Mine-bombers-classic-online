@@ -1,9 +1,34 @@
 import { Direction } from '@minebombers/shared';
 
+export type KeyActionName = 'left' | 'right' | 'up' | 'down' | 'stop' | 'bomb' | 'choose' | 'remote';
+
+export interface KeyBindings {
+  left:   string;   // move left
+  right:  string;   // move right
+  up:     string;   // move up
+  down:   string;   // move down
+  stop:   string;   // stop movement
+  bomb:   string;   // place weapon / buy
+  choose: string;   // cycle weapon / sell
+  remote: string;   // detonate remote
+}
+
+export const DEFAULT_BINDINGS: Readonly<KeyBindings> = {
+  left:   'ArrowLeft',
+  right:  'ArrowRight',
+  up:     'ArrowUp',
+  down:   'ArrowDown',
+  stop:   'ControlRight',
+  bomb:   'Delete',
+  choose: 'End',
+  remote: 'PageDown',
+};
+
 export class InputManager {
   private keys = new Set<string>();
+  private bindings: KeyBindings = { ...DEFAULT_BINDINGS };
+
   private _committedDir: Direction = 'none';
-  private _bombPressed = false;
   private _tntPressed = false;
   private _bigCrossPressed = false;
   private _weaponSwitchPressed = false;
@@ -15,102 +40,90 @@ export class InputManager {
   constructor() {
     window.addEventListener('keydown', (e) => {
       this.keys.add(e.code);
-      if (e.code === 'ArrowUp'    || e.code === 'KeyW') this._committedDir = 'up';
-      if (e.code === 'ArrowDown'  || e.code === 'KeyX') this._committedDir = 'down';
-      if (e.code === 'ArrowLeft')  this._committedDir = 'left';
-      if (e.code === 'ArrowRight') this._committedDir = 'right';
-      if (e.code === 'Space') {
-        e.preventDefault();
-        this._bombPressed = true;
-      }
-      if (e.code === 'Delete') {
-        e.preventDefault();
-        this._tntPressed = true;
-      }
-      if (e.code === 'KeyF') {
-        this._bigCrossPressed = true;
-      }
-      if (e.code === 'End') {
-        e.preventDefault();
-        this._weaponSwitchPressed = true;
-      }
-      if (e.code === 'KeyS') {
+
+      // Configurable primary bindings
+      if (e.code === this.bindings.left)  this._committedDir = 'left';
+      if (e.code === this.bindings.right) this._committedDir = 'right';
+      if (e.code === this.bindings.up)    this._committedDir = 'up';
+      if (e.code === this.bindings.down)  this._committedDir = 'down';
+
+      // Fixed secondary aliases for direction (always active)
+      if (e.code === 'KeyW') this._committedDir = 'up';
+      if (e.code === 'KeyX') this._committedDir = 'down';
+
+      if (e.code === this.bindings.stop) {
         this._stopPressed = true;
         this._committedDir = 'none';
       }
-      if (e.code === 'KeyA') {
-        this._fireExtPressed = true;
+
+      if (e.code === this.bindings.bomb) {
+        e.preventDefault();
+        this._tntPressed = true;
       }
-      if (e.code === 'PageDown') {
+      // Space is a fixed alias for weapon placement
+      if (e.code === 'Space') {
+        const tag = (document.activeElement as HTMLElement)?.tagName;
+        if (tag === 'INPUT' || tag === 'TEXTAREA') return;
+        e.preventDefault();
+        this._tntPressed = true;
+      }
+
+      if (e.code === this.bindings.choose) {
+        e.preventDefault();
+        this._weaponSwitchPressed = true;
+      }
+
+      if (e.code === this.bindings.remote) {
         e.preventDefault();
         this._detonatePressed = true;
       }
-      if (e.code === 'KeyD') {
-        this._treasurePressed = true;
-      }
+
+      // Fixed secondary bindings (non-configurable)
+      if (e.code === 'KeyF') this._bigCrossPressed = true;
+      if (e.code === 'KeyA') this._fireExtPressed = true;
+      if (e.code === 'KeyD') this._treasurePressed = true;
     });
+
     window.addEventListener('keyup', (e) => {
       this.keys.delete(e.code);
     });
+  }
+
+  setBindings(b: Partial<KeyBindings>): void {
+    Object.assign(this.bindings, b);
+  }
+
+  getBindings(): KeyBindings {
+    return { ...this.bindings };
   }
 
   getDirection(): Direction {
     return this._committedDir;
   }
 
-  /** Returns true once per keypress (edge-triggered) */
-  consumeBombPress(): boolean {
-    const v = this._bombPressed;
-    this._bombPressed = false;
-    return v;
-  }
-
-  /** Returns true once per Delete keypress (edge-triggered) */
   consumeTntPress(): boolean {
-    const v = this._tntPressed;
-    this._tntPressed = false;
-    return v;
+    const v = this._tntPressed; this._tntPressed = false; return v;
   }
-
-  /** Returns true once per End keypress (edge-triggered) */
+  /** @deprecated alias for consumeTntPress */
+  consumeBombPress(): boolean {
+    return this.consumeTntPress();
+  }
   consumeWeaponSwitch(): boolean {
-    const v = this._weaponSwitchPressed;
-    this._weaponSwitchPressed = false;
-    return v;
+    const v = this._weaponSwitchPressed; this._weaponSwitchPressed = false; return v;
   }
-
-  /** Returns true once per F keypress (edge-triggered) */
   consumeBigCrossPress(): boolean {
-    const v = this._bigCrossPressed;
-    this._bigCrossPressed = false;
-    return v;
+    const v = this._bigCrossPressed; this._bigCrossPressed = false; return v;
   }
-
-  /** Returns true once per S keypress (edge-triggered) */
   consumeStopPress(): boolean {
-    const v = this._stopPressed;
-    this._stopPressed = false;
-    return v;
+    const v = this._stopPressed; this._stopPressed = false; return v;
   }
-
-  /** Returns true once per A keypress (edge-triggered) */
   consumeFireExtPress(): boolean {
-    const v = this._fireExtPressed;
-    this._fireExtPressed = false;
-    return v;
+    const v = this._fireExtPressed; this._fireExtPressed = false; return v;
   }
-
-  /** Returns true once per PageDown keypress (edge-triggered) */
   consumeDetonatePress(): boolean {
-    const v = this._detonatePressed;
-    this._detonatePressed = false;
-    return v;
+    const v = this._detonatePressed; this._detonatePressed = false; return v;
   }
-
-  /** Returns true once per D keypress (edge-triggered) */
   consumeTreasurePress(): boolean {
-    const v = this._treasurePressed;
-    this._treasurePressed = false;
-    return v;
+    const v = this._treasurePressed; this._treasurePressed = false; return v;
   }
 }

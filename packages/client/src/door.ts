@@ -56,4 +56,10 @@ export class DoorManager {
   getEntities(): DoorEntity[] {
     return this.doors;
   }
+
+  clear(): void {
+    this.doors = [];
+    this.doorKeys = new Set();
+    this.open = false;
+  }
 }

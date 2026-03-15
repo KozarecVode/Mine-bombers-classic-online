@@ -72,10 +72,10 @@ export class BrownManager {
     });
   }
 
-  applyFire(fireCells: Set<string>): void {
+  applyFire(fireCells: Set<string>, damage: number = 1): void {
     for (const b of this.browns) {
       if (b.phase !== 'alive' || !fireCells.has(`${b.tileX},${b.tileY}`)) continue;
-      b.hp--;
+      b.hp -= damage;
       if (b.hp <= 0) { b.phase = 'dead'; b.moving = false; b.digging = false; }
     }
   }
@@ -165,6 +165,10 @@ export class BrownManager {
 
   getEntities(): BrownEntity[] {
     return this.browns;
+  }
+
+  clear(): void {
+    this.browns = [];
   }
 
   applyNetState(monsters: NetMonster[]): void {

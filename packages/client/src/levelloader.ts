@@ -493,7 +493,7 @@ function generateStoneChunk(
   }
 }
 
-export function generateRandomLevel(): ParsedLevel {
+export function generateRandomLevel(treasureCount = 30): ParsedLevel {
   const terrain: Terrain = [];
   const detailMap: TerrainDetailMap = [];
   for (let r = 0; r < MAP_HEIGHT; r++) {
@@ -603,7 +603,7 @@ export function generateRandomLevel(): ParsedLevel {
   ];
   const randItemWeights = [18, 12, 8, 200, 200, 200, 200, 200, 180, 160, 140, 80, 3];
   let treasuresInStone = 0;
-  for (let i = 0; i < 30; i++) {
+  for (let i = 0; i < treasureCount; i++) {
     const item = weightedPick(randItems, randItemWeights);
     if (treasuresInStone <= 20) {
       const stoneTiles: [number, number][] = [];

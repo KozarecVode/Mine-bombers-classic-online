@@ -33,4 +33,8 @@ export class JetpackManager {
   getRemainingFraction(): number {
     return this.remaining / BOOST_TICKS;
   }
+
+  clear(): void {
+    this.remaining = 0;
+  }
 }

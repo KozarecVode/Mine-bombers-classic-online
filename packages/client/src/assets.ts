@@ -42,8 +42,8 @@ export interface Assets {
     disabled:  HTMLCanvasElement;
     explosion: HTMLCanvasElement[];
   };
-  smalldetonate: { placed: HTMLCanvasElement; explosion: HTMLCanvasElement[] };
-  bigdetonate:   { placed: HTMLCanvasElement; explosion: HTMLCanvasElement[] };
+  smalldetonate: { placed: HTMLCanvasElement[]; explosion: HTMLCanvasElement[] };
+  bigdetonate:   { placed: HTMLCanvasElement[]; explosion: HTMLCanvasElement[] };
   urethane: { placed: HTMLCanvasElement; burning: HTMLCanvasElement };
   plastic:  { placed: HTMLCanvasElement; armed: HTMLCanvasElement; explosion: HTMLCanvasElement[] };
   nuclear:       { fuse: HTMLCanvasElement[]; explosion: HTMLCanvasElement[] };
@@ -83,6 +83,10 @@ export interface Assets {
   };
   door:          HTMLImageElement;
   doorswitch:    { off: HTMLCanvasElement; on: HTMLCanvasElement };
+  /** player_state panel images, index 0–3 → player 1–4 */
+  playerStatePanels: HTMLImageElement[];
+  /** shop icon images keyed by icon name e.g. "small_bomb" */
+  shopIcons: Record<string, HTMLImageElement>;
   treasure:      HTMLCanvasElement[]; // 10 sprites, indexed by TREASURE_NAMES order
   pickable:      HTMLCanvasElement[]; // 5 sprites, indexed by PICKABLE_TYPES order
   playerDead:    HTMLCanvasElement;
@@ -469,7 +473,7 @@ export async function loadAssets(): Promise<Assets> {
     loadGrenadierAssets(),
     loadGreyAssets(),
   ]);
-  const [tnt, bigcross, smallcross, grenadeImg, smallbomb, bigbomb, landmineImg, flamebomb, sdImg, bdImg, u1Img, u2Img, p1Img, p2Img, n1Img, n2Img, n3Img, jbImg, lavaImg, teleportImg, barrelImg, diggerImg, boulderImg, door, swOffImg, swOnImg, treasure, pickable, terrainTiles, tileBorders, playerDeadImg, w1, w2, w3, w4, d1, d2, d3, d4] = await Promise.all([
+  const [tnt, bigcross, smallcross, grenadeImg, smallbomb, bigbomb, landmineImg, flamebomb, sdImg, sd2Img, sd3Img, sd4Img, bdImg, bd2Img, bd3Img, bd4Img, u1Img, u2Img, p1Img, p2Img, n1Img, n2Img, n3Img, jbImg, lavaImg, teleportImg, barrelImg, diggerImg, boulderImg, door, swOffImg, swOnImg, treasure, pickable, terrainTiles, tileBorders, playerDeadImg, w1, w2, w3, w4, d1, d2, d3, d4] = await Promise.all([
     loadTntAssets(explosion),
     loadBigCrossAssets(explosion),
     loadSmallCrossAssets(explosion),
@@ -479,7 +483,13 @@ export async function loadAssets(): Promise<Assets> {
     loadImage('/art/texture/weapons/landmine/landmine.png'),
     loadFlameBombAssets(explosion),
     loadImage('/art/texture/weapons/small_detonate_blue/small_detonate_1.png'),
+    loadImage('/art/texture/weapons/small_detonate_player_2/small_detonate_1.png'),
+    loadImage('/art/texture/weapons/small_detonate_player_3/small_detonate_1.png'),
+    loadImage('/art/texture/weapons/small_detonate_player_4/small_detonate_1.png'),
     loadImage('/art/texture/weapons/big_detonate_blue/big_detonate_1.png'),
+    loadImage('/art/texture/weapons/big_detonate_player_2/big_detonate_1.png'),
+    loadImage('/art/texture/weapons/big_detonate_player_3/big_detonate_1.png'),
+    loadImage('/art/texture/weapons/big_detonate_player_4/big_detonate_1.png'),
     loadImage('/art/texture/weapons/urethane/urethane_1.png'),
     loadImage('/art/texture/weapons/urethane/urethane_2.png'),
     loadImage('/art/texture/weapons/plastic/plastic_1.png'),
@@ -506,8 +516,8 @@ export async function loadAssets(): Promise<Assets> {
   ]);
   const grenade       = removeBg(grenadeImg);
   const landmine      = removeBg(landmineImg);
-  const smalldetonate = { placed: removeBg(sdImg), explosion };
-  const bigdetonate   = { placed: removeBg(bdImg), explosion };
+  const smalldetonate = { placed: [sdImg, sd2Img, sd3Img, sd4Img].map(removeBg), explosion };
+  const bigdetonate   = { placed: [bdImg, bd2Img, bd3Img, bd4Img].map(removeBg), explosion };
   const urethane      = { placed: removeBg(u1Img), burning: removeBg(u2Img) };
   const plastic       = { placed: removeBg(p1Img), armed: toCanvas(p2Img), explosion };
   const nuclear       = { fuse: [n1Img, n2Img, n3Img].map(removeBg), explosion };
@@ -521,5 +531,25 @@ export async function loadAssets(): Promise<Assets> {
   const playerDead = toCanvas(playerDeadImg);
   const walk = [w1, w2, w3, w4];
   const dig  = [d1, d2, d3, d4];
-  return { ground, wall, walk, dig, tnt, bigcross, smallcross, grenade, smallbomb, bigbomb, landmine, flamebomb, smalldetonate, bigdetonate, urethane, plastic, nuclear, jumpingbomb, lava, teleport, barrel, diggerbomb, boulder, slime, brown, grenadier, grey, door, doorswitch, treasure, pickable, playerDead, terrainTiles, tileBorders };
+
+  const [ps1, ps2, ps3, ps4] = await Promise.all([
+    loadImage('/art/ui/player_state/player_1.png'),
+    loadImage('/art/ui/player_state/player_2.png'),
+    loadImage('/art/ui/player_state/player_3.png'),
+    loadImage('/art/ui/player_state/player_4.png'),
+  ]);
+  const playerStatePanels = [ps1, ps2, ps3, ps4];
+
+  const SHOP_ICON_NAMES = [
+    'small_bomb','big_bomb','tnt','nuclear','small_detonate','big_detonate',
+    'grenade','landmine','flamethrower','flame_bomb','barrel','small_cross',
+    'big_cross','urethane','plastic','digger_bomb','wall','dig_power_1',
+    'dig_power_2','dig_power_3','teleport','clone','lava','fire_extinguisher',
+    'armor','jumping_bomb','jetpack',
+  ];
+  const shopIconImgs = await Promise.all(SHOP_ICON_NAMES.map(n => loadImage(`/art/ui/shop/${n}.png`)));
+  const shopIcons: Record<string, HTMLImageElement> = {};
+  SHOP_ICON_NAMES.forEach((n, i) => { shopIcons[n] = shopIconImgs[i]; });
+
+  return { ground, wall, walk, dig, tnt, bigcross, smallcross, grenade, smallbomb, bigbomb, landmine, flamebomb, smalldetonate, bigdetonate, urethane, plastic, nuclear, jumpingbomb, lava, teleport, barrel, diggerbomb, boulder, slime, brown, grenadier, grey, door, doorswitch, treasure, pickable, playerDead, terrainTiles, tileBorders, playerStatePanels, shopIcons };
 }

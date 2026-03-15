@@ -137,4 +137,10 @@ export class TeleportManager {
   getEntities(): TeleportEntity[] {
     return this.entities;
   }
+
+  clear(): void {
+    this.entities = [];
+    this.nextId = 0;
+    this.cooldown = 0;
+  }
 }

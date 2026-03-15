@@ -84,4 +84,14 @@ export class DoorSwitchManager {
   getEntities(): SwitchEntity[] {
     return this.switches;
   }
+
+  clear(): void {
+    this.switches = [];
+    this.switchKeys = new Set();
+    this.on = false;
+    this.heldThisFrame = new Set();
+    this.heldLastFrame = new Set();
+    this.pending = false;
+    this.cooldown = 0;
+  }
 }

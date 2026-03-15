@@ -61,6 +61,8 @@ export interface NetPlayer {
   dead: boolean;
   color: number;
   name: string;
+  cash: number;
+  digPower: number;
 }
 
 /** A player entry shown in the pre-game lobby */
@@ -68,6 +70,7 @@ export interface LobbyPlayer {
   id: number;
   name: string;
   color: number;
+  isReady?: boolean;
 }
 
 /** Full level state sent from host to clients on game start */
@@ -77,6 +80,8 @@ export interface LevelInitData {
   entities: Array<{ kind: string; col: number; row: number; subtype?: string }>;
   spawnCol: number;
   spawnRow: number;
+  /** Per-player spawn corner assignments (randomly shuffled each game) */
+  playerSpawns?: Array<{ playerId: number; col: number; row: number }>;
 }
 
 /** A single terrain+detail tile change */
@@ -96,16 +101,26 @@ export type NetMsg =
   | { type: 'promoted_host' }
   // Host → all clients (relayed by server)
   | ({ type: 'init' } & LevelInitData)
-  | { type: 'state'; tick: number; players: NetPlayer[]; monsters: NetMonster[]; pushables: NetPushable[]; clones?: NetClone[]; doorSwitchOn?: boolean; doorOpen?: boolean; lava?: Array<{ id: number; cells: [number, number][] }>; urethane?: Array<{ id: number; phase: string; cells: [number, number][] }>; plastic?: Array<{ id: number; phase: string; armedCells: [number, number][]; explosionCells: [number, number][] }> }
+  | { type: 'state'; tick: number; roundTick: number; players: NetPlayer[]; monsters: NetMonster[]; pushables: NetPushable[]; clones?: NetClone[]; doorSwitchOn?: boolean; doorOpen?: boolean; lava?: Array<{ id: number; cells: [number, number][] }>; urethane?: Array<{ id: number; phase: string; cells: [number, number][] }>; plastic?: Array<{ id: number; phase: string; armedCells: [number, number][]; explosionCells: [number, number][] }> }
+  // Host → all clients: tournament finished, full standings
+  | { type: 'tournament_over'; slots: Array<{ name: string; color: number; totalCash: number; roundsWon: number; active: boolean }> }
   | { type: 'terrain'; changes: TerrainChange[] }
   | { type: 'lobby'; players: LobbyPlayer[] }
   // Any player → host (relayed by server, tagged with fromPlayerId)
   | { type: 'player_name'; name: string; fromPlayerId?: number }
   // Client → host (relayed by server, tagged with fromPlayerId)
-  | { type: 'input'; dir: NetDir; actions: string[]; fromPlayerId?: number }
+  | { type: 'input'; dir: NetDir; actions: string[]; digPower?: number; gold?: number; fromPlayerId?: number }
   // Host → all clients: items removed from world this tick
   | { type: 'item_remove'; pickable: number[]; treasure: number[] }
-  // Host → all clients: game over, return to lobby
-  | { type: 'game_over' }
+  // Host → all clients: game over, return to lobby (balances carries per-client new banked cash)
+  | { type: 'game_over'; balances?: Array<{ playerId: number; bankedCash: number }> }
   // Host → all clients: host placed a weapon (relayed for visual sync)
-  | { type: 'weapon_act'; weapon: string; x: number; y: number; tileX: number; tileY: number; dir: NetDir; moving: boolean; actorColor?: number };
+  | { type: 'weapon_act'; weapon: string; x: number; y: number; tileX: number; tileY: number; dir: NetDir; moving: boolean; actorColor?: number; ownerId?: number }
+  // Chat message
+  | { type: 'chat'; name: string; text: string; fromPlayerId?: number; senderPlayerId?: number }
+  // Player ready state
+  | { type: 'player_ready'; isReady: boolean; fromPlayerId?: number }
+  // Host → all clients: selected map changed
+  | { type: 'map_select'; level: string | null }
+  // Host → joining client: authoritative tournament config
+  | { type: 'game_config'; rounds: number; startingCash: number; treasures: number; timeLimitSec: number; bombDamagePct: number; freeMarker: boolean; selling: boolean; winCondition: 'money' | 'wins' };

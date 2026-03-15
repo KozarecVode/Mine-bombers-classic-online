@@ -166,4 +166,10 @@ export class PlasticManager {
   }
 
   getEntities(): PlasticEntity[] { return this.entities; }
+
+  clear(): void {
+    this.entities = [];
+    this.nextId = 0;
+    this.digHp = new Map();
+  }
 }

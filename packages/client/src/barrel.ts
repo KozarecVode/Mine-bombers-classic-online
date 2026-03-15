@@ -160,4 +160,9 @@ export class BarrelManager {
   }
 
   getEntities(): BarrelEntity[] { return this.entities; }
+
+  clear(): void {
+    this.entities = [];
+    this.nextId = 0;
+  }
 }

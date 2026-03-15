@@ -197,9 +197,9 @@ export class TntManager {
     }
   }
 
-  /** Force a TNT entity into a specific phase (used for host→client sync). */
-  forcePhase(id: number, newPhase: TntPhase, terrain: Terrain): void {
-    const e = this.entities.find(e => e.id === id);
+  /** Force a TNT entity into a specific phase (used for host→client sync). Looks up by tile position. */
+  forcePhaseAt(tileX: number, tileY: number, newPhase: TntPhase, terrain: Terrain): void {
+    const e = this.entities.find(e => e.tileX === tileX && e.tileY === tileY);
     if (!e || e.phase === newPhase) return;
     if (newPhase === 'disabled') {
       e.phase = 'disabled';
@@ -212,5 +212,10 @@ export class TntManager {
 
   getEntities(): TntEntity[] {
     return this.entities;
+  }
+
+  clear(): void {
+    this.entities = [];
+    this.nextId = 0;
   }
 }

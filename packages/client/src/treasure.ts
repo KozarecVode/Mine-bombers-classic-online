@@ -104,4 +104,10 @@ export class TreasureManager {
   getEntities(): TreasureEntity[] {
     return this.entities;
   }
+
+  clear(): void {
+    this.entities = [];
+    this.nextId = 0;
+    this.lastRemovedIds = [];
+  }
 }

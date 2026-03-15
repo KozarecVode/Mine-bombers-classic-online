@@ -105,4 +105,9 @@ export class LandmineManager {
   }
 
   getEntities(): LandmineEntity[] { return this.entities; }
+
+  clear(): void {
+    this.entities = [];
+    this.nextId = 0;
+  }
 }

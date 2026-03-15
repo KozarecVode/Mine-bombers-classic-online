@@ -84,8 +84,8 @@ export class BombManager {
     this.entities = this.entities.filter((e) => e.phase !== "done");
   }
 
-  forcePhase(id: number, phase: BombPhase, terrain: Terrain): void {
-    const e = this.entities.find(e => e.id === id);
+  forcePhaseAt(tileX: number, tileY: number, phase: BombPhase, terrain: Terrain): void {
+    const e = this.entities.find(e => e.tileX === tileX && e.tileY === tileY);
     if (!e || e.phase === phase) return;
     if (phase === 'disabled') {
       e.phase = 'disabled';
@@ -169,6 +169,11 @@ export class BombManager {
 
   getEntities(): BombEntity[] {
     return this.entities;
+  }
+
+  clear(): void {
+    this.entities = [];
+    this.nextId = 0;
   }
 }
 

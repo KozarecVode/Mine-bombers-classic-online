@@ -72,4 +72,9 @@ export class BoulderManager {
   chainDetonate(_fireCells: Set<string>, _terrain: Terrain): void {}
 
   getEntities(): BoulderEntity[] { return this.boulders; }
+
+  clear(): void {
+    this.boulders = [];
+    this.nextId = 0;
+  }
 }

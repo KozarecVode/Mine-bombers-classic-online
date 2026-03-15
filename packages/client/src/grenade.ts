@@ -136,6 +136,11 @@ export class GrenadeManager {
   getEntities(): GrenadeEntity[] {
     return this.entities;
   }
+
+  clear(): void {
+    this.entities = [];
+    this.nextId = 0;
+  }
 }
 
 function dirDelta(dir: "up" | "down" | "left" | "right"): [number, number] {

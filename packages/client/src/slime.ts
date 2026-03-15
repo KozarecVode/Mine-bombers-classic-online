@@ -73,10 +73,10 @@ export class SlimeManager {
     });
   }
 
-  applyFire(fireCells: Set<string>): void {
+  applyFire(fireCells: Set<string>, damage: number = 1): void {
     for (const s of this.slimes) {
       if (s.phase !== 'alive' || !fireCells.has(`${s.tileX},${s.tileY}`)) continue;
-      s.hp--;
+      s.hp -= damage;
       if (s.hp <= 0) { s.phase = 'dead'; s.moving = false; s.digging = false; }
     }
   }
@@ -168,6 +168,10 @@ export class SlimeManager {
 
   getEntities(): SlimeEntity[] {
     return this.slimes;
+  }
+
+  clear(): void {
+    this.slimes = [];
   }
 
   applyNetState(monsters: NetMonster[]): void {

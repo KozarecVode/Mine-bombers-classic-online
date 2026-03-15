@@ -134,4 +134,9 @@ export class DiggerBombManager {
   }
 
   getEntities(): DiggerBombEntity[] { return this.entities; }
+
+  clear(): void {
+    this.entities = [];
+    this.nextId = 0;
+  }
 }

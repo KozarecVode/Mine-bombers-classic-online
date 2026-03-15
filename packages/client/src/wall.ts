@@ -60,4 +60,9 @@ export class WallManager {
   getEntities(): WallEntity[] {
     return this.walls;
   }
+
+  clear(): void {
+    this.walls = [];
+    this.wallKeys = new Set();
+  }
 }

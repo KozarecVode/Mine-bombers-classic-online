@@ -5,6 +5,8 @@ export type { NetDir, LevelInitData, LobbyPlayer, NetMonster, NetPushable, NetCl
 export interface RemoteInput {
   dir: NetDir;
   actions: string[];
+  digPower: number;
+  gold: number;
 }
 
 export class NetworkManager {
@@ -17,14 +19,18 @@ export class NetworkManager {
   onPlayerLeave?: (playerId: number) => void;
   onPromotedHost?: () => void;
   onInitData?: (data: LevelInitData) => void;
-  onStateUpdate?: (players: NetPlayer[], monsters: NetMonster[], pushables: NetPushable[], clones: NetClone[], doorSwitchOn: boolean, doorOpen: boolean, lava: Array<{ id: number; cells: [number, number][] }>, urethane: Array<{ id: number; phase: string; cells: [number, number][] }>, plastic: Array<{ id: number; phase: string; armedCells: [number, number][]; explosionCells: [number, number][] }>) => void;
+  onStateUpdate?: (players: NetPlayer[], monsters: NetMonster[], pushables: NetPushable[], clones: NetClone[], doorSwitchOn: boolean, doorOpen: boolean, lava: Array<{ id: number; cells: [number, number][] }>, urethane: Array<{ id: number; phase: string; cells: [number, number][] }>, plastic: Array<{ id: number; phase: string; armedCells: [number, number][]; explosionCells: [number, number][] }>, roundTick: number) => void;
   onTerrainChange?: (changes: TerrainChange[]) => void;
   onLobbyUpdate?: (players: LobbyPlayer[]) => void;
   onPlayerName?: (playerId: number, name: string) => void;
   onItemRemove?: (pickable: number[], treasure: number[]) => void;
-  onGameOver?: () => void;
-  onWeaponAct?: (weapon: string, x: number, y: number, tileX: number, tileY: number, dir: NetDir, moving: boolean, actorColor: number) => void;
-
+  onGameOver?: (balances?: Array<{ playerId: number; bankedCash: number }>) => void;
+  onWeaponAct?: (weapon: string, x: number, y: number, tileX: number, tileY: number, dir: NetDir, moving: boolean, actorColor: number, ownerId?: number) => void;
+  onChat?: (name: string, text: string, fromPlayerId?: number, senderPlayerId?: number) => void;
+  onPlayerReady?: (playerId: number, isReady: boolean) => void;
+  onMapSelect?: (level: string | null) => void;
+  onGameConfig?: (cfg: { rounds: number; startingCash: number; treasures: number; timeLimitSec: number; bombDamagePct: number; freeMarker: boolean; selling: boolean; winCondition: 'money' | 'wins' }) => void;
+  onTournamentOver?: (slots: Array<{ name: string; color: number; totalCash: number; roundsWon: number; active: boolean }>) => void;
   private ws: WebSocket | null = null;
   private gameTick = 0;
   private remoteInputs = new Map<number, RemoteInput>();
@@ -64,12 +70,12 @@ export class NetworkManager {
         this.onPromotedHost?.();
         break;
       case 'init': {
-        const { terrain, detailMap, entities, spawnCol, spawnRow } = msg;
-        this.onInitData?.({ terrain, detailMap, entities, spawnCol, spawnRow });
+        const { terrain, detailMap, entities, spawnCol, spawnRow, playerSpawns } = msg;
+        this.onInitData?.({ terrain, detailMap, entities, spawnCol, spawnRow, playerSpawns });
         break;
       }
       case 'state':
-        this.onStateUpdate?.(msg.players, msg.monsters ?? [], msg.pushables ?? [], msg.clones ?? [], msg.doorSwitchOn ?? false, msg.doorOpen ?? false, msg.lava ?? [], msg.urethane ?? [], msg.plastic ?? []);
+        this.onStateUpdate?.(msg.players, msg.monsters ?? [], msg.pushables ?? [], msg.clones ?? [], msg.doorSwitchOn ?? false, msg.doorOpen ?? false, msg.lava ?? [], msg.urethane ?? [], msg.plastic ?? [], msg.roundTick ?? 0);
         break;
       case 'terrain':
         this.onTerrainChange?.(msg.changes);
@@ -82,17 +88,32 @@ export class NetworkManager {
         break;
       case 'input':
         if (msg.fromPlayerId !== undefined) {
-          this.remoteInputs.set(msg.fromPlayerId, { dir: msg.dir, actions: msg.actions });
+          this.remoteInputs.set(msg.fromPlayerId, { dir: msg.dir, actions: msg.actions, digPower: msg.digPower ?? 1, gold: msg.gold ?? 0 });
         }
         break;
       case 'item_remove':
         this.onItemRemove?.(msg.pickable, msg.treasure);
         break;
       case 'game_over':
-        this.onGameOver?.();
+        this.onGameOver?.(msg.balances);
         break;
       case 'weapon_act':
-        this.onWeaponAct?.(msg.weapon, msg.x, msg.y, msg.tileX, msg.tileY, msg.dir, msg.moving, msg.actorColor ?? 0);
+        this.onWeaponAct?.(msg.weapon, msg.x, msg.y, msg.tileX, msg.tileY, msg.dir, msg.moving, msg.actorColor ?? 0, msg.ownerId);
+        break;
+      case 'chat':
+        this.onChat?.(msg.name, msg.text, msg.fromPlayerId, msg.senderPlayerId);
+        break;
+      case 'player_ready':
+        if (msg.fromPlayerId !== undefined) this.onPlayerReady?.(msg.fromPlayerId, msg.isReady);
+        break;
+      case 'map_select':
+        this.onMapSelect?.(msg.level);
+        break;
+      case 'game_config':
+        this.onGameConfig?.({ rounds: msg.rounds, startingCash: msg.startingCash, treasures: msg.treasures, timeLimitSec: msg.timeLimitSec, bombDamagePct: msg.bombDamagePct, freeMarker: msg.freeMarker, selling: msg.selling, winCondition: msg.winCondition });
+        break;
+      case 'tournament_over':
+        this.onTournamentOver?.(msg.slots);
         break;
     }
   }
@@ -103,10 +124,10 @@ export class NetworkManager {
   }
 
   // HOST: send state snapshot — internally throttled to SNAPSHOT_EVERY ticks
-  sendSnapshot(players: NetPlayer[], monsters: NetMonster[], pushables: NetPushable[], clones: NetClone[], doorSwitchOn: boolean, doorOpen: boolean, lava: Array<{ id: number; cells: [number, number][] }>, urethane: Array<{ id: number; phase: string; cells: [number, number][] }>, plastic: Array<{ id: number; phase: string; armedCells: [number, number][]; explosionCells: [number, number][] }>): void {
+  sendSnapshot(players: NetPlayer[], monsters: NetMonster[], pushables: NetPushable[], clones: NetClone[], doorSwitchOn: boolean, doorOpen: boolean, lava: Array<{ id: number; cells: [number, number][] }>, urethane: Array<{ id: number; phase: string; cells: [number, number][] }>, plastic: Array<{ id: number; phase: string; armedCells: [number, number][]; explosionCells: [number, number][] }>, roundTick: number): void {
     this.gameTick++;
     if (this.gameTick % this.SNAPSHOT_EVERY !== 0) return;
-    this.send({ type: 'state', tick: this.gameTick, players, monsters, pushables, clones, doorSwitchOn, doorOpen, lava, urethane, plastic });
+    this.send({ type: 'state', tick: this.gameTick, roundTick, players, monsters, pushables, clones, doorSwitchOn, doorOpen, lava, urethane, plastic });
   }
 
   // HOST: send terrain+detail tile changes immediately
@@ -116,13 +137,18 @@ export class NetworkManager {
   }
 
   // HOST: broadcast weapon placement to all clients
-  sendWeaponAct(weapon: string, x: number, y: number, tileX: number, tileY: number, dir: NetDir, moving: boolean, actorColor = 0): void {
-    this.send({ type: 'weapon_act', weapon, x, y, tileX, tileY, dir, moving, actorColor });
+  sendWeaponAct(weapon: string, x: number, y: number, tileX: number, tileY: number, dir: NetDir, moving: boolean, actorColor = 0, ownerId?: number): void {
+    this.send({ type: 'weapon_act', weapon, x, y, tileX, tileY, dir, moving, actorColor, ownerId });
   }
 
-  // HOST: broadcast game over to all clients
-  sendGameOver(): void {
-    this.send({ type: 'game_over' });
+  // HOST: broadcast game over to all clients, with per-player new banked cash
+  sendGameOver(balances?: Array<{ playerId: number; bankedCash: number }>): void {
+    this.send({ type: 'game_over', balances });
+  }
+
+  // HOST: broadcast tournament over with final standings
+  sendTournamentOver(slots: Array<{ name: string; color: number; totalCash: number; roundsWon: number; active: boolean }>): void {
+    this.send({ type: 'tournament_over', slots });
   }
 
   // HOST: broadcast item removals to all clients
@@ -141,14 +167,34 @@ export class NetworkManager {
     this.send({ type: 'player_name', name });
   }
 
+  // ANY: send chat message
+  sendChat(name: string, text: string, senderPlayerId?: number): void {
+    this.send({ type: 'chat', name, text, senderPlayerId });
+  }
+
+  // ANY: send ready state
+  sendReady(isReady: boolean): void {
+    this.send({ type: 'player_ready', isReady });
+  }
+
+  // HOST: broadcast selected map to all clients
+  sendMapSelect(level: string | null): void {
+    this.send({ type: 'map_select', level });
+  }
+
+  // HOST: push authoritative tournament config to all clients
+  sendConfig(cfg: { rounds: number; startingCash: number; treasures: number; timeLimitSec: number; bombDamagePct: number; freeMarker: boolean; selling: boolean; winCondition: 'money' | 'wins' }): void {
+    this.send({ type: 'game_config', ...cfg });
+  }
+
   // CLIENT: send direction + weapon actions to host each frame
-  sendInput(dir: NetDir, actions: string[]): void {
-    this.send({ type: 'input', dir, actions });
+  sendInput(dir: NetDir, actions: string[], digPower: number, gold: number): void {
+    this.send({ type: 'input', dir, actions, digPower, gold });
   }
 
   // HOST: read latest input from a remote player
   getRemoteInput(playerId: number): RemoteInput {
-    return this.remoteInputs.get(playerId) ?? { dir: 'none', actions: [] };
+    return this.remoteInputs.get(playerId) ?? { dir: 'none', actions: [], digPower: 1, gold: 0 };
   }
 
   // HOST: clear actions after processing (actions are edge-triggered — one per press)

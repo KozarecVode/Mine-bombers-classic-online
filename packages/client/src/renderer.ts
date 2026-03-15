@@ -36,7 +36,7 @@ const DISPLAY_SCALE = 3; // render everything at 3× — game logic stays at nat
 
 // ── HUD palette ───────────────────────────────────────────────────────────────
 const HUD_BG = "#000000";
-const HUD_RULE = "#c8c800";
+const HUD_RULE = "#333333";
 const HUD_PANEL = "#1a1a1a";
 const HUD_BORDER = "#444444";
 const NAME_COLORS = ["#4040ff", "#ff4040", "#40c040", "#c0a000"];
@@ -63,27 +63,67 @@ export class Renderer {
   }
 
   initPatterns(assets: Assets): void {
-    this._groundPattern = this.ctx.createPattern(assets.ground, 'repeat');
+    this._groundPattern = this.ctx.createPattern(assets.ground, "repeat");
     this._terrainDirty = true;
     this._assets = assets;
   }
 
-  markTerrainDirty(): void { this._terrainDirty = true; }
+  markTerrainDirty(): void {
+    this._terrainDirty = true;
+  }
 
   private _assets: Assets | null = null;
 
-
-  render(assets: Assets, terrain: Terrain, detailMap: TerrainDetailMap, players: LocalPlayer[], myPlayer: LocalPlayer, tnt: TntManager, bigCross: BigCrossManager, smallCross: BigCrossManager, grenade: GrenadeManager, smallBomb: BombManager, bigBomb: BombManager, landmine: LandmineManager, flameBomb: FlameBombManager, flamethrower: FlamethrowerManager, fireExt: FireExtinguisherManager, smallDet: DetBombManager, bigDet: DetBombManager, urethane: UrethaneManager, plastic: PlasticManager, nuclear: NuclearManager, jumpingBomb: JumpingBombManager, lava: LavaManager, wall: WallManager, teleport: TeleportManager, barrel: BarrelManager, diggerBomb: DiggerBombManager, boulder: BoulderManager, slime: SlimeManager, brown: BrownManager, grenadier: GrenadierManager, grey: GreyManager, clone: CloneManager, door: DoorManager, doorSwitch: DoorSwitchManager, treasure: TreasureManager, pickable: PickableManager, selectedWeapon: string): void {
+  render(
+    assets: Assets,
+    terrain: Terrain,
+    detailMap: TerrainDetailMap,
+    players: LocalPlayer[],
+    myPlayer: LocalPlayer,
+    tnt: TntManager,
+    bigCross: BigCrossManager,
+    smallCross: BigCrossManager,
+    grenade: GrenadeManager,
+    smallBomb: BombManager,
+    bigBomb: BombManager,
+    landmine: LandmineManager,
+    flameBomb: FlameBombManager,
+    flamethrower: FlamethrowerManager,
+    fireExt: FireExtinguisherManager,
+    smallDet: DetBombManager,
+    bigDet: DetBombManager,
+    urethane: UrethaneManager,
+    plastic: PlasticManager,
+    nuclear: NuclearManager,
+    jumpingBomb: JumpingBombManager,
+    lava: LavaManager,
+    wall: WallManager,
+    teleport: TeleportManager,
+    barrel: BarrelManager,
+    diggerBomb: DiggerBombManager,
+    boulder: BoulderManager,
+    slime: SlimeManager,
+    brown: BrownManager,
+    grenadier: GrenadierManager,
+    grey: GreyManager,
+    clone: CloneManager,
+    door: DoorManager,
+    doorSwitch: DoorSwitchManager,
+    treasure: TreasureManager,
+    pickable: PickableManager,
+    selectedWeapon: string,
+    weaponCount: number,
+    roundTick: number,
+    timeLimitTicks: number,
+    playerGold: number,
+  ): void {
     const shake = nuclear.getShakeIntensity();
     if (shake > 0) {
       const MAX_SHAKE = 3;
       this.ctx.save();
-      this.ctx.translate(
-        (Math.random() * 2 - 1) * MAX_SHAKE * shake,
-        (Math.random() * 2 - 1) * MAX_SHAKE * shake,
-      );
+      this.ctx.translate((Math.random() * 2 - 1) * MAX_SHAKE * shake, (Math.random() * 2 - 1) * MAX_SHAKE * shake);
     }
-    this.drawHud(players, myPlayer, selectedWeapon);
+    this.drawHud(players, myPlayer, selectedWeapon, weaponCount, playerGold);
     this.drawTerrain(detailMap, assets);
     this.drawWalls(assets, wall);
     this.drawBoulders(assets, boulder);
@@ -95,8 +135,8 @@ export class Renderer {
     // Lava and placed phase first — other weapons draw on top
     this.drawLava(assets, lava);
     this.drawTeleports(assets, teleport);
-    this.drawUrethane(assets, urethane, 'placed');
-    this.drawPlastic(assets, plastic, 'placed');
+    this.drawUrethane(assets, urethane, "placed");
+    this.drawPlastic(assets, plastic, "placed");
     this.drawTnt(assets, tnt);
     this.drawCross(assets.bigcross, bigCross);
     this.drawCross(assets.smallcross, smallCross);
@@ -114,119 +154,187 @@ export class Renderer {
     this.drawBarrels(assets, barrel);
     this.drawDiggerBombs(assets, diggerBomb);
     // Dead monsters below burning/armed layer so urethane/plastic cover them
-    for (const s of slime.getEntities()) { if (s.phase === 'dead') this.drawSlime(assets, s); }
-    for (const b of brown.getEntities()) { if (b.phase === 'dead') this.drawBrown(assets, b); }
-    for (const g of grenadier.getEntities()) { if (g.phase === 'dead') this.drawGrenadier(assets, g); }
-    for (const g of grey.getEntities()) { if (g.phase === 'dead') this.drawGrey(assets, g); }
-    for (const c of clone.getEntities()) { if (c.phase === 'dead') this.drawClone(assets, c, detailMap); }
+    for (const s of slime.getEntities()) {
+      if (s.phase === "dead") this.drawSlime(assets, s);
+    }
+    for (const b of brown.getEntities()) {
+      if (b.phase === "dead") this.drawBrown(assets, b);
+    }
+    for (const g of grenadier.getEntities()) {
+      if (g.phase === "dead") this.drawGrenadier(assets, g);
+    }
+    for (const g of grey.getEntities()) {
+      if (g.phase === "dead") this.drawGrey(assets, g);
+    }
+    for (const c of clone.getEntities()) {
+      if (c.phase === "dead") this.drawClone(assets, c, detailMap);
+    }
     // Burning/armed phase on top — covers other items beneath
-    this.drawUrethane(assets, urethane, 'burning');
-    this.drawPlastic(assets, plastic, 'active');
+    this.drawUrethane(assets, urethane, "burning");
+    this.drawPlastic(assets, plastic, "active");
     // Alive monsters on top of everything
-    for (const s of slime.getEntities()) { if (s.phase !== 'dead') this.drawSlime(assets, s); }
-    for (const b of brown.getEntities()) { if (b.phase !== 'dead') this.drawBrown(assets, b); }
-    for (const g of grenadier.getEntities()) { if (g.phase !== 'dead') this.drawGrenadier(assets, g); }
-    for (const g of grey.getEntities()) { if (g.phase !== 'dead') this.drawGrey(assets, g); }
-    for (const c of clone.getEntities()) { if (c.phase !== 'dead') this.drawClone(assets, c, detailMap); }
-    for (const p of players) this.drawPlayer(assets, p, detailMap);
+    for (const s of slime.getEntities()) {
+      if (s.phase !== "dead") this.drawSlime(assets, s);
+    }
+    for (const b of brown.getEntities()) {
+      if (b.phase !== "dead") this.drawBrown(assets, b);
+    }
+    for (const g of grenadier.getEntities()) {
+      if (g.phase !== "dead") this.drawGrenadier(assets, g);
+    }
+    for (const g of grey.getEntities()) {
+      if (g.phase !== "dead") this.drawGrey(assets, g);
+    }
+    for (const c of clone.getEntities()) {
+      if (c.phase !== "dead") this.drawClone(assets, c, detailMap);
+    }
+    // Dead players (blood splatters) below alive players
+    for (const p of players) { if (p.dead) this.drawPlayer(assets, p, detailMap); }
+    for (const p of players) { if (!p.dead) this.drawPlayer(assets, p, detailMap); }
     if (shake > 0) this.ctx.restore();
     this.drawNuclearFlash(nuclear);
+    this.drawTimerBar(roundTick, timeLimitTicks);
+  }
+
+  // ── Timer bar ──────────────────────────────────────────────────────────────
+
+  private drawTimerBar(roundTick: number, timeLimitTicks: number): void {
+    if (timeLimitTicks <= 0) return;
+    const frac = Math.max(0, 1 - roundTick / timeLimitTicks);
+    const barH = 3;
+    const y = this.totalH - barH;
+    this.ctx.fillStyle = "#111111";
+    this.ctx.fillRect(0, y, this.totalW, barH);
+    if (frac > 0) {
+      this.ctx.fillStyle = "#ffdd00";
+      this.ctx.fillRect(0, y, Math.round(this.totalW * frac), barH);
+    }
   }
 
   // ── HUD ────────────────────────────────────────────────────────────────────
 
-  private drawHud(players: LocalPlayer[], myPlayer: LocalPlayer, selectedWeapon: string): void {
+  // Maps weapon id → shop icon filename
+  private static readonly WEAPON_ICON: Record<string, string> = {
+    smallbomb: "small_bomb",
+    bigbomb: "big_bomb",
+    tnt: "tnt",
+    nuclear: "nuclear",
+    smalldetonate: "small_detonate",
+    bigdetonate: "big_detonate",
+    grenade: "grenade",
+    landmine: "landmine",
+    flamethrower: "flamethrower",
+    flamebomb: "flame_bomb",
+    barrel: "barrel",
+    smallcross: "small_cross",
+    bigcross: "big_cross",
+    urethane: "urethane",
+    plastic: "plastic",
+    diggerbomb: "digger_bomb",
+    wall: "wall",
+    teleport: "teleport",
+    clone: "clone",
+    lava: "lava",
+    fireextinguisher: "fire_extinguisher",
+    armor: "armor",
+    jumpingbomb: "jumping_bomb",
+    jetpack: "jetpack",
+  };
+
+  private drawHud(players: LocalPlayer[], myPlayer: LocalPlayer, selectedWeapon: string, weaponCount: number, playerGold: number): void {
     const { ctx } = this;
     ctx.fillStyle = HUD_BG;
     ctx.fillRect(0, 0, this.totalW, HUD_HEIGHT);
-    ctx.fillStyle = HUD_RULE;
-    ctx.fillRect(0, HUD_HEIGHT - 2, this.totalW, 2);
 
-    players.forEach((p, i) => {
-      this.drawPlayerPanel(p, i * 248 + 6, 4, p === myPlayer, p === myPlayer ? selectedWeapon : null);
-    });
+    ctx.fillRect(0, HUD_HEIGHT - 2, this.totalW, 2);
+    this.drawPlayerPanel(myPlayer, selectedWeapon, weaponCount, playerGold);
   }
 
-  private drawPlayerPanel(p: LocalPlayer, x: number, y: number, isMe: boolean, selectedWeapon: string | null = null): void {
+  private drawPlayerPanel(p: LocalPlayer, selectedWeapon: string, weaponCount: number, playerGold: number): void {
+    if (!this._assets) return;
     const { ctx } = this;
+    const assets = this._assets;
 
-    ctx.fillStyle = HUD_PANEL;
-    ctx.fillRect(x, y, 236, HUD_HEIGHT - 8);
-    ctx.strokeStyle = isMe ? "#40ff40" : HUD_BORDER;
-    ctx.lineWidth = 1;
-    ctx.strokeRect(x, y, 236, HUD_HEIGHT - 8);
+    const panelX = 0;
+    const panelH = 30;
+    const panelW = 143;
+    const panelY = Math.floor((HUD_HEIGHT - panelH) / 2) + 13;
 
-    // Name
-    ctx.fillStyle = NAME_COLORS[p.color] ?? "#fff";
-    ctx.font = "bold 11px monospace";
+    // Draw player state background (has built-in HP bar on right side)
+    const panel = assets.playerStatePanels[p.color] ?? assets.playerStatePanels[0];
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(panel, panelX, panelY, panelW, panelH);
+
+    // Vertical HP bar on the right side of the panel
+    const BAR_COLORS = ["#00008B ", "#ff2222", "#22cc44", "#ffdd00"];
+    const barX = panelX + 133;
+    const barW = 8;
+    const barH = panelH - 4;
+    const barY = panelY + 2;
+    const hpFrac = Math.max(0, p.health / MAX_HEALTH);
+    const fillH = Math.round(barH * hpFrac);
+    ctx.fillStyle = "#111111";
+    ctx.fillRect(barX, barY, barW, barH);
+    if (fillH > 0) {
+      ctx.fillStyle = BAR_COLORS[p.color] ?? BAR_COLORS[0];
+      ctx.fillRect(barX, barY + barH - fillH, barW, fillH);
+    }
+
+    // Weapon icon in the left 30×30 black square; fall back to small_bomb when no icon
+    const iconName = Renderer.WEAPON_ICON[selectedWeapon] ?? "small_bomb";
+    const iconImg = assets.shopIcons[iconName] ?? assets.shopIcons["small_bomb"];
+    if (iconImg) {
+      ctx.drawImage(iconImg, panelX + 4, panelY + 1, 28, 28);
+      // Count badge — top-left corner of the icon (always shown)
+      const countStr = String(weaponCount);
+      ctx.font = "bold 7px monospace";
+      ctx.textBaseline = "top";
+      ctx.textAlign = "left";
+      ctx.fillStyle = "#000000";
+      ctx.fillText(countStr, panelX + 3, panelY + 3);
+      ctx.fillStyle = "#ffffff";
+      ctx.fillText(countStr, panelX + 5, panelY + 2);
+    }
+
+    // Player name above dig power
+    ctx.textBaseline = "top";
+    ctx.font = "bold 7px monospace";
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#cccccc";
+    ctx.fillText(p.name.slice(0, 10), panelX + 38, panelY + 2);
+
+    // Dig power (red) and cash (yellow) in the centre section
+    const textY = panelY + panelH - 11;
+    const textY2 = panelY + panelH - 2;
+    ctx.textBaseline = "bottom";
+    ctx.font = "bold 7px monospace";
+    ctx.textAlign = "left";
+    ctx.fillStyle = "#ff4444";
+    ctx.fillText(`${p.digPower}`, panelX + 55, textY);
+    ctx.textAlign = "right";
+    ctx.fillStyle = "#ffdd00";
+    ctx.fillText(`$${playerGold + p.cash}`, panelX + 75, textY2);
     ctx.textAlign = "left";
     ctx.textBaseline = "top";
-    ctx.fillText(p.name.slice(0, 9), x + 8, y + 4);
-
-    // Selected weapon (right-aligned, same row as name)
-    if (selectedWeapon) {
-      ctx.fillStyle = "#ffcc00";
-      ctx.font = "8px monospace";
-      ctx.textAlign = "right";
-      ctx.fillText(selectedWeapon, x + 228, y + 5);
-      ctx.textAlign = "left";
-    }
-
-    // Cash
-    ctx.fillStyle = "#00cc44";
-    ctx.font = "9px monospace";
-    ctx.textAlign = "right";
-    ctx.fillText(`$${p.cash}`, x + 228, y + 20);
-    ctx.textAlign = "left";
-
-    // Bomb count
-    ctx.fillStyle = "#888";
-    ctx.beginPath();
-    ctx.arc(x + 12, y + 24, 5, 0, Math.PI * 2);
-    ctx.fill();
-    ctx.fillStyle = "#ffdd00";
-    ctx.font = "9px monospace";
-    ctx.fillText("x1", x + 20, y + 20);
-
-    // Health bar
-    const barX = x + 8;
-    const barY = y + 33;
-    const barW = 140;
-    const hpFrac = Math.max(0, p.health / MAX_HEALTH);
-    ctx.fillStyle = "#330000";
-    ctx.fillRect(barX, barY, barW, 9);
-    ctx.fillStyle = hpFrac > 0.5 ? "#cc2020" : hpFrac > 0.25 ? "#cc7000" : "#cccc00";
-    ctx.fillRect(barX, barY, Math.round(barW * hpFrac), 9);
-    ctx.strokeStyle = "#660000";
-    ctx.lineWidth = 1;
-    ctx.strokeRect(barX, barY, barW, 9);
-    ctx.fillStyle = "#aaa";
-    ctx.font = "8px monospace";
-    ctx.fillText("HP", barX + barW + 4, barY + 8);
-
-    // Dig power
-    if (p.digPower > 0) {
-      ctx.fillStyle = "#a06030";
-      ctx.fillText(`⛏${p.digPower}`, barX, barY + 20);
-    }
   }
 
   // ── Terrain ────────────────────────────────────────────────────────────────
 
   private buildTerrainCanvas(detailMap: TerrainDetailMap, assets: Assets): HTMLCanvasElement {
-    const oc = document.createElement('canvas');
-    oc.width  = MAP_WIDTH  * TILE_SIZE;
+    const oc = document.createElement("canvas");
+    oc.width = MAP_WIDTH * TILE_SIZE;
     oc.height = MAP_HEIGHT * TILE_SIZE;
-    const octx = oc.getContext('2d')!;
+    const octx = oc.getContext("2d")!;
     octx.imageSmoothingEnabled = false;
-    octx.fillStyle = octx.createPattern(assets.ground, 'repeat')!;
+    octx.fillStyle = octx.createPattern(assets.ground, "repeat")!;
     octx.fillRect(0, 0, oc.width, oc.height);
     for (let row = 0; row < MAP_HEIGHT; row++) {
       for (let col = 0; col < MAP_WIDTH; col++) {
         const { type } = detailMap[row][col];
-        if (type === 'ground') continue;
-        const x = col * TILE_SIZE, y = row * TILE_SIZE;
-        if (type === 'border') {
+        if (type === "ground") continue;
+        const x = col * TILE_SIZE,
+          y = row * TILE_SIZE;
+        if (type === "border") {
           octx.drawImage(assets.wall, x, y, TILE_SIZE, TILE_SIZE);
         } else {
           const sprite = assets.terrainTiles[type];
@@ -236,30 +344,30 @@ export class Renderer {
     }
     // Border overlays: draw directional borders on sand/solid_rock tiles adjacent to ground
     const borderDirs = [
-      { dc: 0, dr: -1, dir: 'up' },
-      { dc: 0, dr:  1, dir: 'down' },
-      { dc: -1, dr: 0, dir: 'left' },
-      { dc:  1, dr: 0, dir: 'right' },
+      { dc: 0, dr: -1, dir: "up" },
+      { dc: 0, dr: 1, dir: "down" },
+      { dc: -1, dr: 0, dir: "left" },
+      { dc: 1, dr: 0, dir: "right" },
     ];
     for (let row = 0; row < MAP_HEIGHT; row++) {
       for (let col = 0; col < MAP_WIDTH; col++) {
         const { type } = detailMap[row][col];
-        const base = type.startsWith('solid_rock') ? 'solid_rock'
-                   : type.startsWith('sand')        ? 'sand'
-                   : null;
+        const base = type.startsWith("solid_rock") ? "solid_rock" : type.startsWith("sand") ? "sand" : null;
         if (!base) continue;
-        const x = col * TILE_SIZE, y = row * TILE_SIZE;
+        const x = col * TILE_SIZE,
+          y = row * TILE_SIZE;
         for (const { dc, dr, dir } of borderDirs) {
-          const nr = row + dr, nc = col + dc;
+          const nr = row + dr,
+            nc = col + dc;
           if (nr < 0 || nr >= MAP_HEIGHT || nc < 0 || nc >= MAP_WIDTH) continue;
           const neighbor = detailMap[nr][nc];
-          if (neighbor.type !== 'ground') continue;
+          if (neighbor.type !== "ground") continue;
           const key = neighbor.burnedGround ? `${base}_burned_${dir}` : `${base}_${dir}`;
           const sprite = assets.tileBorders[key];
           if (!sprite) continue;
           // Draw at natural size, aligned to the correct edge
-          const bx = dir === 'right' ? x + TILE_SIZE - sprite.width  : x;
-          const by = dir === 'down'  ? y + TILE_SIZE - sprite.height : y;
+          const bx = dir === "right" ? x + TILE_SIZE - sprite.width : x;
+          const by = dir === "down" ? y + TILE_SIZE - sprite.height : y;
           octx.drawImage(sprite, bx, by);
         }
       }
@@ -303,9 +411,9 @@ export class Renderer {
 
   private drawTeleports(assets: Assets, mgr: TeleportManager): void {
     for (const e of mgr.getEntities()) {
-      if (e.phase === 'placed') {
+      if (e.phase === "placed") {
         this.ctx.drawImage(assets.teleport, e.col * TILE_SIZE, e.row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
-      } else if (e.phase === 'exploding') {
+      } else if (e.phase === "exploding") {
         const frame = assets.tnt.explosion[mgr.explosionFrame(e)];
         for (const [col, row] of e.cells) {
           this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
@@ -352,7 +460,7 @@ export class Renderer {
 
   private drawTnt(assets: Assets, tnt: TntManager): void {
     for (const e of tnt.getEntities()) {
-      if (e.phase === 'exploding') {
+      if (e.phase === "exploding") {
         this.drawTntExplosion(assets, tnt, e);
       }
       this.drawTntSprite(assets, tnt, e);
@@ -361,9 +469,9 @@ export class Renderer {
 
   private drawTntSprite(assets: Assets, tnt: TntManager, e: TntEntity): void {
     let sprite: HTMLCanvasElement;
-    if (e.phase === 'fusing') {
+    if (e.phase === "fusing") {
       sprite = assets.tnt.fuse[tnt.fuseFrame(e)];
-    } else if (e.phase === 'disabled') {
+    } else if (e.phase === "disabled") {
       sprite = assets.tnt.disabled;
     } else {
       return; // exploding phase — only show explosion cells
@@ -386,12 +494,12 @@ export class Renderer {
 
   private drawCross(crossAssets: { fuse: HTMLCanvasElement[]; explosion: HTMLCanvasElement[] }, mgr: BigCrossManager): void {
     for (const e of mgr.getEntities()) {
-      if (e.phase === 'exploding') {
+      if (e.phase === "exploding") {
         const frame = crossAssets.explosion[mgr.explosionFrame(e)];
         for (const [col, row] of e.cells) {
           this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
         }
-      } else if (e.phase === 'fusing') {
+      } else if (e.phase === "fusing") {
         const sprite = crossAssets.fuse[mgr.fuseFrame(e)];
         this.ctx.drawImage(sprite, e.tileX * TILE_SIZE, e.tileY * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
       }
@@ -400,17 +508,20 @@ export class Renderer {
 
   // ── Bomb (small / big) ────────────────────────────────────────────────────
 
-  private drawBomb(bombAssets: { fuse: HTMLCanvasElement[]; disabled: HTMLCanvasElement; explosion: HTMLCanvasElement[] }, mgr: BombManager): void {
+  private drawBomb(
+    bombAssets: { fuse: HTMLCanvasElement[]; disabled: HTMLCanvasElement; explosion: HTMLCanvasElement[] },
+    mgr: BombManager,
+  ): void {
     for (const e of mgr.getEntities()) {
-      if (e.phase === 'exploding') {
+      if (e.phase === "exploding") {
         const frame = bombAssets.explosion[mgr.explosionFrame(e)];
         for (const [col, row] of e.cells) {
           this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
         }
-      } else if (e.phase === 'fusing') {
+      } else if (e.phase === "fusing") {
         const sprite = bombAssets.fuse[mgr.fuseFrame(e)];
         this.ctx.drawImage(sprite, e.tileX * TILE_SIZE, e.tileY * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
-      } else if (e.phase === 'disabled') {
+      } else if (e.phase === "disabled") {
         this.ctx.drawImage(bombAssets.disabled, e.tileX * TILE_SIZE, e.tileY * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
       }
     }
@@ -420,9 +531,9 @@ export class Renderer {
 
   private drawLandmines(assets: Assets, mgr: LandmineManager): void {
     for (const e of mgr.getEntities()) {
-      if (e.phase === 'armed') {
+      if (e.phase === "armed") {
         this.ctx.drawImage(assets.landmine, e.tileX * TILE_SIZE, e.tileY * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
-      } else if (e.phase === 'exploding') {
+      } else if (e.phase === "exploding") {
         const frame = assets.tnt.explosion[mgr.explosionFrame(e)];
         for (const [col, row] of e.cells) {
           this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
@@ -435,9 +546,9 @@ export class Renderer {
 
   private drawGrenades(assets: Assets, mgr: GrenadeManager): void {
     for (const e of mgr.getEntities()) {
-      if (e.phase === 'flying') {
+      if (e.phase === "flying") {
         this.ctx.drawImage(assets.grenade, e.tileX * TILE_SIZE, e.tileY * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
-      } else if (e.phase === 'exploding') {
+      } else if (e.phase === "exploding") {
         const frame = assets.tnt.explosion[mgr.explosionFrame(e)];
         for (const [col, row] of e.cells) {
           this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
@@ -450,12 +561,12 @@ export class Renderer {
 
   private drawFlameBomb(assets: Assets, mgr: FlameBombManager): void {
     for (const e of mgr.getEntities()) {
-      if (e.phase === 'fusing') {
+      if (e.phase === "fusing") {
         const sprite = assets.flamebomb.fuse[mgr.fuseFrame(e)];
         this.ctx.drawImage(sprite, e.tileX * TILE_SIZE, e.tileY * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
-      } else if (e.phase === 'disabled') {
+      } else if (e.phase === "disabled") {
         this.ctx.drawImage(assets.flamebomb.disabled, e.tileX * TILE_SIZE, e.tileY * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
-      } else if (e.phase === 'exploding') {
+      } else if (e.phase === "exploding") {
         const frame = assets.tnt.explosion[mgr.explosionFrame(e)];
         for (const [col, row] of e.cells) {
           this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
@@ -477,16 +588,16 @@ export class Renderer {
 
   // ── Urethane ───────────────────────────────────────────────────────────────
 
-  private drawUrethane(assets: Assets, mgr: UrethaneManager, layer: 'placed' | 'burning'): void {
-    if (layer === 'placed') {
+  private drawUrethane(assets: Assets, mgr: UrethaneManager, layer: "placed" | "burning"): void {
+    if (layer === "placed") {
       for (const e of mgr.getEntities()) {
-        if (e.phase === 'placed') {
+        if (e.phase === "placed") {
           this.ctx.drawImage(assets.urethane.placed, e.centerX * TILE_SIZE, e.centerY * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
         }
       }
     } else {
       for (const e of mgr.getEntities()) {
-        if (e.phase === 'burning') {
+        if (e.phase === "burning") {
           for (const [col, row] of e.cells) {
             this.ctx.drawImage(assets.urethane.burning, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
           }
@@ -501,11 +612,12 @@ export class Renderer {
 
   // ── Det Bomb ───────────────────────────────────────────────────────────────
 
-  private drawDetBomb(bombAssets: { placed: HTMLCanvasElement; explosion: HTMLCanvasElement[] }, mgr: DetBombManager): void {
+  private drawDetBomb(bombAssets: { placed: HTMLCanvasElement[]; explosion: HTMLCanvasElement[] }, mgr: DetBombManager): void {
     for (const e of mgr.getEntities()) {
-      if (e.phase === 'placed') {
-        this.ctx.drawImage(bombAssets.placed, e.tileX * TILE_SIZE, e.tileY * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
-      } else if (e.phase === 'exploding') {
+      if (e.phase === "placed") {
+        const placedSprite = bombAssets.placed[e.ownerColor] ?? bombAssets.placed[0];
+        this.ctx.drawImage(placedSprite, e.tileX * TILE_SIZE, e.tileY * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
+      } else if (e.phase === "exploding") {
         const frame = bombAssets.explosion[mgr.explosionFrame(e)];
         for (const [col, row] of e.cells) {
           this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
@@ -527,20 +639,20 @@ export class Renderer {
 
   // ── Plastic ────────────────────────────────────────────────────────────────
 
-  private drawPlastic(assets: Assets, mgr: PlasticManager, layer: 'placed' | 'active'): void {
-    if (layer === 'placed') {
+  private drawPlastic(assets: Assets, mgr: PlasticManager, layer: "placed" | "active"): void {
+    if (layer === "placed") {
       for (const e of mgr.getEntities()) {
-        if (e.phase === 'placed') {
+        if (e.phase === "placed") {
           this.ctx.drawImage(assets.plastic.placed, e.centerX * TILE_SIZE, e.centerY * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
         }
       }
     } else {
       for (const e of mgr.getEntities()) {
-        if (e.phase === 'armed') {
+        if (e.phase === "armed") {
           for (const [col, row] of e.armedCells) {
             this.ctx.drawImage(assets.plastic.armed, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
           }
-        } else if (e.phase === 'exploding') {
+        } else if (e.phase === "exploding") {
           const frame = assets.plastic.explosion[mgr.explosionFrame(e)];
           for (const [col, row] of e.explosionCells) {
             this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
@@ -554,10 +666,10 @@ export class Renderer {
 
   private drawNuclear(assets: Assets, mgr: NuclearManager): void {
     for (const e of mgr.getEntities()) {
-      if (e.phase === 'fusing') {
+      if (e.phase === "fusing") {
         const frame = assets.nuclear.fuse[mgr.fuseFrame(e)];
         this.ctx.drawImage(frame, e.centerX * TILE_SIZE, e.centerY * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
-      } else if (e.phase === 'exploding') {
+      } else if (e.phase === "exploding") {
         const frame = assets.nuclear.explosion[mgr.explosionFrame(e)];
         for (const [col, row] of e.cells) {
           this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
@@ -570,7 +682,7 @@ export class Renderer {
     const intensity = mgr.getFlashIntensity();
     if (intensity <= 0) return;
     this.ctx.globalAlpha = intensity;
-    this.ctx.fillStyle = '#ffffff';
+    this.ctx.fillStyle = "#ffffff";
     this.ctx.fillRect(0, 0, this.totalW, this.totalH);
     this.ctx.globalAlpha = 1;
   }
@@ -589,9 +701,9 @@ export class Renderer {
 
   private drawBarrels(assets: Assets, mgr: BarrelManager): void {
     for (const e of mgr.getEntities()) {
-      if (e.phase === 'placed') {
+      if (e.phase === "placed") {
         this.ctx.drawImage(assets.barrel, e.tileX * TILE_SIZE, e.tileY * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
-      } else if (e.phase === 'exploding') {
+      } else if (e.phase === "exploding") {
         const frame = assets.tnt.explosion[mgr.explosionFrame(e)];
         for (const [col, row] of e.centralCells) {
           this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
@@ -609,9 +721,9 @@ export class Renderer {
 
   private drawDiggerBombs(assets: Assets, mgr: DiggerBombManager): void {
     for (const e of mgr.getEntities()) {
-      if (e.phase === 'fusing') {
+      if (e.phase === "fusing") {
         this.ctx.drawImage(assets.diggerbomb, e.tileX * TILE_SIZE, e.tileY * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
-      } else if (e.phase === 'exploding') {
+      } else if (e.phase === "exploding") {
         const frame = assets.tnt.explosion[mgr.explosionFrame(e)];
         for (const [col, row] of e.cells) {
           this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
@@ -640,12 +752,12 @@ export class Renderer {
 
   // ── Slime ──────────────────────────────────────────────────────────────────
 
-  private drawSlime(assets: Assets, s: import('./slime.js').SlimeEntity): void {
-    if (s.phase === 'dead') {
+  private drawSlime(assets: Assets, s: import("./slime.js").SlimeEntity): void {
+    if (s.phase === "dead") {
       this.ctx.drawImage(assets.slime.dead, Math.round(s.x), Math.round(s.y) + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
       return;
     }
-    const dir = s.dir === 'none' ? 'down' : s.dir;
+    const dir = s.dir === "none" ? "down" : s.dir;
     const frames = assets.slime[dir];
     const frame = s.moving ? frames[s.animFrame % frames.length] : frames[0];
     this.ctx.drawImage(frame, Math.round(s.x), Math.round(s.y) + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
@@ -653,12 +765,12 @@ export class Renderer {
 
   // ── Brown ──────────────────────────────────────────────────────────────────
 
-  private drawBrown(assets: Assets, b: import('./brown.js').BrownEntity): void {
-    if (b.phase === 'dead') {
+  private drawBrown(assets: Assets, b: import("./brown.js").BrownEntity): void {
+    if (b.phase === "dead") {
       this.ctx.drawImage(assets.brown.dead, Math.round(b.x), Math.round(b.y) + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
       return;
     }
-    const dir = b.dir === 'none' ? 'down' : b.dir;
+    const dir = b.dir === "none" ? "down" : b.dir;
     const frames = assets.brown[dir];
     const frame = b.moving ? frames[b.animFrame % frames.length] : frames[0];
     this.ctx.drawImage(frame, Math.round(b.x), Math.round(b.y) + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
@@ -666,12 +778,12 @@ export class Renderer {
 
   // ── Grey ───────────────────────────────────────────────────────────────────
 
-  private drawGrey(assets: Assets, g: import('./grey.js').GreyEntity): void {
-    if (g.phase === 'dead') {
+  private drawGrey(assets: Assets, g: import("./grey.js").GreyEntity): void {
+    if (g.phase === "dead") {
       this.ctx.drawImage(assets.grey.dead, Math.round(g.x), Math.round(g.y) + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
       return;
     }
-    const dir = g.dir === 'none' ? 'down' : g.dir;
+    const dir = g.dir === "none" ? "down" : g.dir;
     const frames = assets.grey[dir];
     const frame = g.moving ? frames[g.animFrame % frames.length] : frames[0];
     this.ctx.drawImage(frame, Math.round(g.x), Math.round(g.y) + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
@@ -679,12 +791,12 @@ export class Renderer {
 
   // ── Grenadier ──────────────────────────────────────────────────────────────
 
-  private drawGrenadier(assets: Assets, g: import('./grenadier.js').GrenadierEntity): void {
-    if (g.phase === 'dead') {
+  private drawGrenadier(assets: Assets, g: import("./grenadier.js").GrenadierEntity): void {
+    if (g.phase === "dead") {
       this.ctx.drawImage(assets.grenadier.dead, Math.round(g.x), Math.round(g.y) + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
       return;
     }
-    const dir = g.dir === 'none' ? 'down' : g.dir;
+    const dir = g.dir === "none" ? "down" : g.dir;
     const frames = assets.grenadier[dir];
     const frame = g.moving ? frames[g.animFrame % frames.length] : frames[0];
     this.ctx.drawImage(frame, Math.round(g.x), Math.round(g.y) + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
@@ -692,20 +804,23 @@ export class Renderer {
 
   // ── Clone ──────────────────────────────────────────────────────────────────
 
-  private drawClone(assets: Assets, e: import('./clone.js').CloneEntity, detailMap: TerrainDetailMap): void {
-    const dirKey = e.dir === 'none' ? 'down' : e.dir;
-    if (e.phase === 'dead') {
+  private drawClone(assets: Assets, e: import("./clone.js").CloneEntity, detailMap: TerrainDetailMap): void {
+    const dirKey = e.dir === "none" ? "down" : e.dir;
+    if (e.phase === "dead") {
       this.ctx.drawImage(assets.grey.dead, Math.round(e.x), Math.round(e.y) + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
       return;
     }
     let frames: HTMLCanvasElement[];
     if (e.digging) {
       const cell = detailMap[e.digTileY]?.[e.digTileX];
-      frames = (cell && isHardDigTile(cell.type)) ? (assets.dig[e.color] ?? assets.dig[0])[dirKey] : (assets.walk[e.color] ?? assets.walk[0])[dirKey];
+      frames =
+        cell && isHardDigTile(cell.type)
+          ? (assets.dig[e.color] ?? assets.dig[0])[dirKey]
+          : (assets.walk[e.color] ?? assets.walk[0])[dirKey];
     } else {
       frames = (assets.walk[e.color] ?? assets.walk[0])[dirKey];
     }
-    const frame = (e.moving || e.digging) ? frames[e.animFrame % frames.length] : frames[0];
+    const frame = e.moving || e.digging ? frames[e.animFrame % frames.length] : frames[0];
     this.ctx.drawImage(frame, Math.round(e.x), Math.round(e.y) + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
   }
 
@@ -717,25 +832,27 @@ export class Renderer {
       return;
     }
 
-    const dirKey = p.dir === 'none' ? 'down' : p.dir;
+    const dirKey = p.dir === "none" ? "down" : p.dir;
 
     const playerWalk = assets.walk[p.color] ?? assets.walk[0];
-    const playerDig  = assets.dig[p.color]  ?? assets.dig[0];
+    const playerDig = assets.dig[p.color] ?? assets.dig[0];
 
     let frames: HTMLCanvasElement[];
     if (p.digging) {
       // Use digging animation for hard tiles, walk animation for soft tiles
-      const dcol = p.dir === 'right' ? 1 : p.dir === 'left' ? -1 : 0;
-      const drow = p.dir === 'down'  ? 1 : p.dir === 'up'   ? -1 : 0;
-      const nc = p.tileX + dcol, nr = p.tileY + drow;
+      const dcol = p.dir === "right" ? 1 : p.dir === "left" ? -1 : 0;
+      const drow = p.dir === "down" ? 1 : p.dir === "up" ? -1 : 0;
+      const nc = p.tileX + dcol,
+        nr = p.tileY + drow;
       const cell = detailMap[nr]?.[nc];
-      frames = (cell && isHardDigTile(cell.type)) ? playerDig[dirKey] : playerWalk[dirKey];
+      frames = cell && isHardDigTile(cell.type) ? playerDig[dirKey] : playerWalk[dirKey];
     } else {
       frames = playerWalk[dirKey];
     }
 
-    const px = Math.round(p.x), py = Math.round(p.y) + HUD_HEIGHT;
-    const frame = (p.moving || p.digging) ? frames[p.animFrame % frames.length] : frames[0];
+    const px = Math.round(p.x),
+      py = Math.round(p.y) + HUD_HEIGHT;
+    const frame = p.moving || p.digging ? frames[p.animFrame % frames.length] : frames[0];
     this.ctx.drawImage(frame, px, py, TILE_SIZE, TILE_SIZE);
   }
 }

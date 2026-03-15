@@ -163,4 +163,9 @@ export class FlamethrowerManager {
   }
 
   getEntities(): FlamethrowerEntity[] { return this.entities; }
+
+  clear(): void {
+    this.entities = [];
+    this.nextId = 0;
+  }
 }

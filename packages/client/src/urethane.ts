@@ -239,4 +239,11 @@ export class UrethaneManager {
 
   getEntities(): UrethaneEntity[] { return this.entities; }
   getFires(): UrethaneFire[] { return this.fires; }
+
+  clear(): void {
+    this.entities = [];
+    this.fires = [];
+    this.nextId = 0;
+    this.digHp = new Map();
+  }
 }

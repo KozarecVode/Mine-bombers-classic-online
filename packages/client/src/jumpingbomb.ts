@@ -164,4 +164,9 @@ export class JumpingBombManager {
   }
 
   getEntities(): JumpingBombEntity[] { return this.entities; }
+
+  clear(): void {
+    this.entities = [];
+    this.nextId = 0;
+  }
 }

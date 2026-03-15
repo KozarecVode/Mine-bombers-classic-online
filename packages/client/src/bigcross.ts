@@ -158,4 +158,9 @@ export class BigCrossManager {
   }
 
   getEntities(): BigCrossEntity[] { return this.entities; }
+
+  clear(): void {
+    this.entities = [];
+    this.nextId = 0;
+  }
 }

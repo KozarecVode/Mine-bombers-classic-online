@@ -13,6 +13,7 @@ export interface DetBombEntity {
   tick: number;
   grace: boolean;
   cells: [number, number][];
+  ownerColor: number;
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -31,12 +32,12 @@ export class DetBombManager {
 
   constructor(private readonly pattern: [number, number][]) {}
 
-  place(playerX: number, playerY: number, terrain: Terrain): void {
+  place(playerX: number, playerY: number, terrain: Terrain, ownerColor = 0): void {
     const tileX = Math.round(playerX / TILE_SIZE);
     const tileY = Math.round(playerY / TILE_SIZE);
     if (isStone(terrain, tileX, tileY)) return;
     if (this.entities.some((e) => e.tileX === tileX && e.tileY === tileY)) return;
-    this.entities.push({ id: this.nextId++, tileX, tileY, phase: "placed", tick: 0, grace: true, cells: [] });
+    this.entities.push({ id: this.nextId++, tileX, tileY, phase: "placed", tick: 0, grace: true, cells: [], ownerColor });
   }
 
   /** Manually detonate all placed bombs. */
@@ -127,6 +128,11 @@ export class DetBombManager {
   }
 
   getEntities(): DetBombEntity[] { return this.entities; }
+
+  clear(): void {
+    this.entities = [];
+    this.nextId = 0;
+  }
 }
 
 // ── Patterns ──────────────────────────────────────────────────────────────────

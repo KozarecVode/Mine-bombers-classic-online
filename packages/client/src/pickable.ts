@@ -93,4 +93,10 @@ export class PickableManager {
   getEntities(): PickableEntity[] {
     return this.entities;
   }
+
+  clear(): void {
+    this.entities = [];
+    this.nextId = 0;
+    this.lastRemovedIds = [];
+  }
 }

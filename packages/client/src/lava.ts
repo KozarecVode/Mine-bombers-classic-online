@@ -151,6 +151,12 @@ export class LavaManager {
 
   getEntities(): LavaEntity[] { return this.entities; }
 
+  clear(): void {
+    this.entities = [];
+    this.nextId = 0;
+    this.digHp = new Map();
+  }
+
   /** Replace lava state from host snapshot (clients only). */
   applyNetState(lava: Array<{ id: number; cells: [number, number][] }>): void {
     this.entities = lava.map(ld => {

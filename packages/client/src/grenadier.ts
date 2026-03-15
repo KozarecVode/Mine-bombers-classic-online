@@ -83,10 +83,10 @@ export class GrenadierManager {
     });
   }
 
-  applyFire(fireCells: Set<string>): void {
+  applyFire(fireCells: Set<string>, damage: number = 1): void {
     for (const e of this.entities) {
       if (e.phase !== "alive" || !fireCells.has(`${e.tileX},${e.tileY}`)) continue;
-      e.hp--;
+      e.hp -= damage;
       if (e.hp <= 0) { e.phase = "dead"; e.moving = false; e.shooting = false; e.digging = false; }
     }
   }
@@ -238,6 +238,10 @@ export class GrenadierManager {
 
   getEntities(): GrenadierEntity[] {
     return this.entities;
+  }
+
+  clear(): void {
+    this.entities = [];
   }
 
   applyNetState(monsters: NetMonster[]): void {
