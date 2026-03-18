@@ -71,16 +71,16 @@
         cursor: pointer;
       }
       .menu-hit:nth-child(3) {
-        top: 31.2%;
+        top: 26%;
       }
       .menu-hit:nth-child(4) {
-        top: 40.5%;
+        top: 36%;
       }
       .menu-hit:nth-child(5) {
-        top: 51%;
+        top: 46%;
       }
       .menu-hit:nth-child(6) {
-        top: 60%;
+        top: 56%;
       }
 
       /* ── Info screen ───────────────────────────────────────────── */
@@ -107,7 +107,7 @@
       /* ── Create game screen ─────────────────────────────────────────── */
       #cg-shovel {
         position: absolute;
-        left: 28.2%;
+        left: 40%;
         transform: translate(-50%, -50%);
         width: 13%;
         image-rendering: pixelated;
@@ -123,13 +123,13 @@
         cursor: pointer;
       }
       .cg-hit:nth-child(3) {
-        top: 36%;
+        top: 26%;
       }
       .cg-hit:nth-child(4) {
-        top: 50%;
+        top: 35%;
       }
       .cg-hit:nth-child(5) {
-        top: 64%;
+        top: 45%;
       }
       #cg-status {
         position: absolute;
@@ -144,16 +144,39 @@
       }
 
       /* ── Join game screen ────────────────────────────────────────────── */
+      #jg-shovel {
+        display: none;
+        position: absolute;
+        left: 40%;
+        top: 50%;
+        transform: translate(-50%, -50%);
+        width: 13%;
+        image-rendering: pixelated;
+        image-rendering: crisp-edges;
+        pointer-events: none;
+      }
+      #jg-back-hit:hover ~ #jg-shovel {
+        display: block;
+      }
+      #jg-back-hit {
+        position: absolute;
+        left: 15%;
+        width: 70%;
+        height: 10%;
+        top: 50%;
+        transform: translateY(-50%);
+        cursor: pointer;
+      }
       #jg-input-area {
         position: absolute;
-        top: 50%;
-        left: 50%;
+        top: 37%;
+        left: 57%;
         transform: translate(-50%, -50%);
         display: flex;
         flex-direction: column;
         align-items: center;
-        gap: 4%;
-        width: 60%;
+
+        width: 40%;
       }
       .dos-input {
         background: #111;
@@ -515,6 +538,14 @@
         height: auto;
       }
       /* ── Options screen ──────────────────────────────────────────── */
+      .opt-hit {
+        position: absolute;
+        left: 0;
+        right: 0;
+        height: 18px;
+        cursor: pointer;
+        transform: translateY(-50%);
+      }
       #opt-shovel {
         position: absolute;
         left: 35%;
@@ -692,6 +723,8 @@
           <button id="jg-join-btn" class="dos-btn">JOIN</button>
           <div id="jg-status"></div>
         </div>
+        <div id="jg-back-hit"></div>
+        <img id="jg-shovel" src="/art/ui/shovel.png" draggable="false" />
       </div>
     </div>
 
@@ -731,6 +764,17 @@
       <div class="ui-frame">
         <img class="bg" src="/art/ui/options/options.png" draggable="false" />
         <img id="opt-shovel" src="/art/ui/options/shovel.png" draggable="false" />
+        <!-- Invisible hit areas for each option row -->
+        <div class="opt-hit" style="top: 108px"></div>
+        <div class="opt-hit" style="top: 132px"></div>
+        <div class="opt-hit" style="top: 156px"></div>
+        <div class="opt-hit" style="top: 180px"></div>
+        <div class="opt-hit" style="top: 203px"></div>
+        <div class="opt-hit" style="top: 223px"></div>
+        <div class="opt-hit" style="top: 247px"></div>
+        <div class="opt-hit" style="top: 274px"></div>
+        <div class="opt-hit" style="top: 302px"></div>
+        <div class="opt-hit" style="top: 328px"></div>
         <!-- Bar fills (CASH, TREASURES, ROUNDS, TIME, BOMB DAMAGE) -->
         <div id="opt-fill-0" class="opt-bar-fill" style="top: 101px"></div>
         <div id="opt-fill-1" class="opt-bar-fill" style="top: 126px"></div>

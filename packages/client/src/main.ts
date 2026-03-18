@@ -553,7 +553,11 @@ let priceMultiplier = 1.0;
 
 // Client-side prediction
 let inputSeq = 0;
-interface InputSnapshot { seq: number; dir: Dir; stopPressed: boolean; }
+interface InputSnapshot {
+  seq: number;
+  dir: Dir;
+  stopPressed: boolean;
+}
 const inputBuffer: InputSnapshot[] = [];
 let pendingHostPlayerState: import("@minebombers/shared").NetPlayer | null = null;
 
@@ -752,9 +756,12 @@ function startGameFromLobby(): void {
     // Update remote players to their assigned spawn positions on the host
     for (const [pid, rp] of remotePlayers) {
       const [sx, sy] = spawnPos(pid);
-      rp.x = sx * TILE_SIZE; rp.y = sy * TILE_SIZE;
-      rp.tileX = sx; rp.tileY = sy;
-      rp.targetTileX = sx; rp.targetTileY = sy;
+      rp.x = sx * TILE_SIZE;
+      rp.y = sy * TILE_SIZE;
+      rp.tileX = sx;
+      rp.tileY = sy;
+      rp.targetTileX = sx;
+      rp.targetTileY = sy;
     }
     const [tx, ty] = spawnPos(netMgr.localPlayerId);
     player.x = tx * TILE_SIZE;
@@ -1002,7 +1009,8 @@ function applyRemoteWeapon(
   else if (action === "grey") greyMgr.place(rp.x, rp.y, terrain);
   else if (action === "clone") {
     if (!netMgr.connected || netMgr.isHost) cloneMgr.place(rp.x, rp.y, terrain, ownerId, actorColor);
-  } else if (action === "clone_grenade" || action === "grenadier_grenade") grenadeMgr.placeAt(rp.tileX, rp.tileY, rp.dir as Exclude<Dir, "none">, terrain);
+  } else if (action === "clone_grenade" || action === "grenadier_grenade")
+    grenadeMgr.placeAt(rp.tileX, rp.tileY, rp.dir as Exclude<Dir, "none">, terrain);
   else if (action === "treasure") treasureMgr.place(rp.x, rp.y, terrain);
   else if (action === "landmine") landmineMgr.place(rp.x, rp.y, terrain);
   else if (action === "landmine_trigger") landmineMgr.triggerAt(rp.tileX, rp.tileY, terrain);
@@ -1239,7 +1247,6 @@ function consumeWeapon(id: string): void {
   if (cur > 0) gameInventory.set(id, cur - 1);
 }
 
-
 function nextAvailableWeapon(current: WeaponName): WeaponName {
   const idx = WEAPONS.indexOf(current);
   for (let i = 1; i < WEAPONS.length; i++) {
@@ -1327,7 +1334,10 @@ function applyPushables(pushables: NetPushable[]): void {
   if (nuclearData) {
     for (const e of nuclearMgr.getEntities()) {
       const p = nuclearData.get(e.id);
-      if (p) { e.centerX = p.tileX; e.centerY = p.tileY; }
+      if (p) {
+        e.centerX = p.tileX;
+        e.centerY = p.tileY;
+      }
     }
   }
   // Sync TNT/bomb phase by position so dud/explode decision follows the host
@@ -1991,7 +2001,10 @@ netMgr.onStateUpdate = (players, monsters, pushables, clones, doorSwitchOn, door
     if (np.id === netMgr.localPlayerId) {
       player.health = np.health;
       player.cash = np.cash;
-      if (np.dead && !player.dead) { player.dead = true; player.moving = false; }
+      if (np.dead && !player.dead) {
+        player.dead = true;
+        player.moving = false;
+      }
       // Queue reconciliation — applied in game loop where weaponMgrs are accessible
       if (!player.dead) pendingHostPlayerState = np;
     } else {
@@ -2077,7 +2090,7 @@ netMgr.onWeaponAct = (weapon, x, y, tileX, tileY, dir, moving, actorColor, owner
 // ── Create game screen logic ───────────────────────────────────────────────────
 
 const CG_ITEMS = ["hostgame", "joingame", "back"] as const;
-const CG_SHOVEL_Y_PCT = [36, 50, 64]; // adjust to match create_game.png hole positions
+const CG_SHOVEL_Y_PCT = [31, 41, 51]; // hole positions in create_game.png
 let cgSelectedIdx = 0;
 
 function updateCgShovel(): void {
@@ -2133,28 +2146,37 @@ document.querySelectorAll<HTMLElement>(".cg-hit").forEach((el) => {
   });
 });
 
+let jgStatusTimer: ReturnType<typeof setTimeout> | null = null;
+function setJgStatus(msg: string, autoClear = false): void {
+  if (jgStatusTimer) clearTimeout(jgStatusTimer);
+  jgStatusEl.textContent = msg;
+  if (autoClear && msg) jgStatusTimer = setTimeout(() => { jgStatusEl.textContent = ""; }, 3000);
+}
+
 document.getElementById("jg-join-btn")!.addEventListener("click", () => {
   const ip = jgHostIpInput.value.trim();
   if (!ip) {
-    jgStatusEl.textContent = "Enter the host's IP address";
+    setJgStatus("Enter the host's IP address", true);
     return;
   }
-  jgStatusEl.textContent = "Connecting…";
+  setJgStatus("Connecting…");
   const url = ip.startsWith("ws://") || ip.startsWith("wss://") ? ip : `ws://${ip}:3001`;
   netMgr.disconnect();
   netMgr
     .connect(url)
     .then(() => {
-      jgStatusEl.textContent = "";
+      setJgStatus("");
     })
     .catch(() => {
-      jgStatusEl.textContent = "Could not connect";
+      setJgStatus("Could not connect", true);
     });
 });
 
 jgHostIpInput.addEventListener("keydown", (e) => {
   if (e.key === "Enter") document.getElementById("jg-join-btn")!.click();
 });
+
+document.getElementById("jg-back-hit")!.addEventListener("click", () => openCreateGame());
 
 // ── Shop grid initialisation ───────────────────────────────────────────────────
 
@@ -2242,17 +2264,21 @@ function loop(ts: number): void {
   const stopPressed = input.consumeStopPress();
   // Non-host clients: pass 'none' so local input doesn't move the player —
   // movement only starts when the server confirms it via snapshot.
-  const localDir = (netMgr.connected && !netMgr.isHost) ? 'none' : inputDir;
+  const localDir = netMgr.connected && !netMgr.isHost ? "none" : inputDir;
   updatePlayer(player, localDir as Dir, stopPressed, terrain, weaponMgrs, playerMoveSpeed, pushBlocker);
 
   // CLIENT: apply host-confirmed state directly (no prediction)
   if (netMgr.connected && !netMgr.isHost && pendingHostPlayerState) {
     const np = pendingHostPlayerState;
     pendingHostPlayerState = null;
-    player.x = np.x; player.y = np.y;
-    player.tileX = np.tileX; player.tileY = np.tileY;
-    player.targetTileX = np.targetTileX; player.targetTileY = np.targetTileY;
-    player.moving = np.moving; player.dir = np.dir as Dir;
+    player.x = np.x;
+    player.y = np.y;
+    player.tileX = np.tileX;
+    player.tileY = np.tileY;
+    player.targetTileX = np.targetTileX;
+    player.targetTileY = np.targetTileY;
+    player.moving = np.moving;
+    player.dir = np.dir as Dir;
     player.digging = np.digging;
     if (DEBUG_RECONCILIATION) {
       const acked = np.lastInputSeq ?? 0;
@@ -2610,7 +2636,7 @@ function loop(ts: number): void {
   {
     const allPlayerPositions = [
       ...(player.dead ? [] : [{ x: player.x, y: player.y }]),
-      ...[...remotePlayers.values()].filter(rp => !rp.dead).map(rp => ({ x: rp.x, y: rp.y })),
+      ...[...remotePlayers.values()].filter((rp) => !rp.dead).map((rp) => ({ x: rp.x, y: rp.y })),
     ];
     const landmineTriggers = landmineMgr.update(allPlayerPositions, terrain);
     if (netMgr.connected && netMgr.isHost) {
@@ -2848,7 +2874,8 @@ function loop(ts: number): void {
     const hasNew = (fire: Set<string>) => fire.size > 0 && [...fire].some((k) => newNormalCells.has(k));
     if (hasNew(smallBombFire) || hasNew(bigBombFire) || hasNew(landmineFire)) playSound("PIKKUPOM", 80, 0.2);
     if (hasNew(smallCrossFire) || hasNew(smallDetFire) || hasNew(plasticFire) || hasNew(flameBarrelFire)) playSound("EXPLOS1", 80, 0.03);
-    if (hasNew(tntFire) || hasNew(bigDetFire) || hasNew(bigCrossFire) || hasNew(teleportMgr.getFireCells()) || hasNew(jumpingBombFire)) playSound("EXPLOS2", 80, 0.03);
+    if (hasNew(tntFire) || hasNew(bigDetFire) || hasNew(bigCrossFire) || hasNew(teleportMgr.getFireCells()) || hasNew(jumpingBombFire))
+      playSound("EXPLOS2", 80, 0.03);
     if (nuclearFire.size > 0 && [...nuclearFire].some((k) => newNuclearCells.has(k))) playSound("EXPLOS3", 80, 0.03);
     if (flamethrowerFire.size > 0) playSound("EXPLOS4", 300, 0.1);
     if (hasNew(diggerBombFire) || hasNew(flameBombFire)) playSound("EXPLOS5", 80, 0.1);
@@ -3163,7 +3190,10 @@ function loop(ts: number): void {
       })),
     ];
     netMgr.sendSnapshot(
-      [toNetPlayer(player, netMgr.localPlayerId), ...[...remotePlayers.entries()].map(([pid, rp]) => toNetPlayer(rp, pid, netMgr.getLastRemoteInputSeq(pid)))],
+      [
+        toNetPlayer(player, netMgr.localPlayerId),
+        ...[...remotePlayers.entries()].map(([pid, rp]) => toNetPlayer(rp, pid, netMgr.getLastRemoteInputSeq(pid))),
+      ],
       netMonsters,
       collectPushables(),
       cloneMgr.getNetState(),
