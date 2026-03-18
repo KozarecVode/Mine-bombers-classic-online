@@ -99,7 +99,8 @@ export type NetMsg =
   | { type: 'assign'; playerId: number; isHost: boolean }
   | { type: 'player_join'; playerId: number }
   | { type: 'player_leave'; playerId: number }
-  | { type: 'promoted_host' }
+  | { type: 'host_left' }
+  | { type: 'game_in_progress' }
   // Host → all clients (relayed by server)
   | ({ type: 'init' } & LevelInitData)
   | { type: 'state'; tick: number; roundTick: number; players: NetPlayer[]; monsters: NetMonster[]; pushables: NetPushable[]; clones?: NetClone[]; doorSwitchOn?: boolean; doorOpen?: boolean; lava?: Array<{ id: number; cells: [number, number][] }>; urethane?: Array<{ id: number; phase: string; cells: [number, number][] }>; plastic?: Array<{ id: number; phase: string; armedCells: [number, number][]; explosionCells: [number, number][] }> }

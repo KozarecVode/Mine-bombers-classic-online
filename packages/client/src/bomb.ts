@@ -13,6 +13,7 @@ export interface BombEntity {
   tick: number;
   grace: boolean;
   cells: [number, number][];
+  selfAuthority?: boolean; // true once host confirms placement — client runs its own fuse
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -66,7 +67,7 @@ export class BombManager {
         const overlaps = pl < tx + TILE_SIZE && pr > tx && pt < ty + TILE_SIZE && pb > ty;
         if (!overlaps) e.grace = false;
       }
-      if (e.phase === "fusing" && e.tick >= FUSE_TICKS_PER_FRAME * 3 && this.isAuthority) {
+      if (e.phase === "fusing" && e.tick >= FUSE_TICKS_PER_FRAME * 3 && (this.isAuthority || e.selfAuthority)) {
         if (Math.random() < DUD_CHANCE) {
           e.phase = "disabled";
           e.tick = 0;
@@ -83,6 +84,11 @@ export class BombManager {
 
     this.chainDetonate(this.getFireCells(), terrain);
     this.entities = this.entities.filter((e) => e.phase !== "done");
+  }
+
+  enableSelfAuthorityAt(tileX: number, tileY: number): void {
+    const e = this.entities.find((e) => e.tileX === tileX && e.tileY === tileY && e.phase === "fusing");
+    if (e) { e.selfAuthority = true; e.tick = 0; } // reset tick so fuse syncs from host confirmation
   }
 
   forcePhaseAt(tileX: number, tileY: number, phase: BombPhase, terrain: Terrain): void {

@@ -11,8 +11,9 @@ export interface PlasticEntity {
   tick: number;
   centerX: number;
   centerY: number;
-  armedCells: [number, number][];     // plastic_2 diamond (half=8)
-  explosionCells: [number, number][]; // expanded diamond (half=10)
+  armedCells: [number, number][];     // reachable ground tiles (for armed visual + collision)
+  explosionCells: [number, number][]; // ground tiles + adjacent stone ring (for blast + terrain damage)
+  blocked?: (col: number, row: number) => boolean; // stored for re-computation at arm time
 }
 
 // ── Constants ─────────────────────────────────────────────────────────────────
@@ -25,32 +26,46 @@ const CHAIN_FRAME_CUTOFF   = 6;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
-function buildDiamond(cx: number, cy: number, maxHalf: number, terrain: Terrain, blocked?: (col: number, row: number) => boolean): [number, number][] {
+/** BFS flood-fill on passable (non-stone) ground tiles, capped by maxTiles count. */
+function buildGroundCells(
+  cx: number, cy: number,
+  maxTiles: number,
+  terrain: Terrain,
+  blocked?: (col: number, row: number) => boolean,
+): [number, number][] {
   const rows = terrain.length, cols = terrain[0].length;
   const result: [number, number][] = [];
-  const visited = new Set<string>();
+  const visited = new Set<string>([`${cx},${cy}`]);
   const queue: [number, number][] = [[cx, cy]];
-  visited.add(`${cx},${cy}`);
 
-  while (queue.length > 0) {
+  while (queue.length > 0 && result.length < maxTiles) {
     const [c, r] = queue.shift()!;
-
-    // Skip out-of-bounds, boundary, stone, or blocked — these stop expansion
     if (c <= 0 || c >= cols - 1 || r <= 0 || r >= rows - 1) continue;
     if (isStone(terrain, c, r)) continue;
     if (blocked?.(c, r)) continue;
-
     result.push([c, r]);
-
-    const dist = Math.abs(c - cx) + Math.abs(r - cy);
-    if (dist >= maxHalf) continue;
-
     for (const [dc, dr] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) {
       const key = `${c + dc},${r + dr}`;
-      if (!visited.has(key)) {
-        visited.add(key);
-        queue.push([c + dc, r + dr]);
-      }
+      if (!visited.has(key)) { visited.add(key); queue.push([c + dc, r + dr]); }
+    }
+  }
+  return result;
+}
+
+/** Add the immediately adjacent diggable stone tiles (non-border) around a set of ground cells. */
+function addStoneBorder(groundCells: [number, number][], terrain: Terrain): [number, number][] {
+  const rows = terrain.length, cols = terrain[0].length;
+  const result: [number, number][] = [...groundCells];
+  const seen = new Set<string>(groundCells.map(([c, r]) => `${c},${r}`));
+  for (const [c, r] of groundCells) {
+    for (const [dc, dr] of [[-1, 0], [1, 0], [0, -1], [0, 1]] as const) {
+      const nc = c + dc, nr = r + dr;
+      if (nr <= 0 || nr >= rows - 1 || nc <= 0 || nc >= cols - 1) continue;
+      const key = `${nc},${nr}`;
+      if (seen.has(key)) continue;
+      if (!isStone(terrain, nc, nr)) continue;
+      seen.add(key);
+      result.push([nc, nr]);
     }
   }
   return result;
@@ -71,8 +86,9 @@ export class PlasticManager {
       tick: 0,
       centerX: cx,
       centerY: cy,
-      armedCells: buildDiamond(cx, cy, 8, terrain, blocked),
-      explosionCells: buildDiamond(cx, cy, 10, terrain, blocked),
+      armedCells: [[cx, cy]],  // just the center tile during placed phase
+      explosionCells: [],      // computed at arm time from armed area
+      blocked,
     });
   }
 
@@ -80,13 +96,18 @@ export class PlasticManager {
     return this.entities.some(e => e.phase !== "done" && e.armedCells.some(([c, r]) => c === col && r === row));
   }
 
-  private arm(e: PlasticEntity): void { e.phase = "armed"; e.tick = 0; }
+  private arm(e: PlasticEntity, terrain: Terrain): void {
+    e.phase = "armed";
+    e.tick = 0;
+    e.armedCells = buildGroundCells(e.centerX, e.centerY, 55, terrain, e.blocked);
+    e.explosionCells = addStoneBorder(e.armedCells, terrain);
+  }
   private explode(e: PlasticEntity): void { e.phase = "exploding"; e.tick = 0; }
 
-  update(): void {
+  update(terrain: Terrain): void {
     for (const e of this.entities) {
       e.tick++;
-      if      (e.phase === "placed"    && e.tick >= PLACED_TICKS)                         this.arm(e);
+      if      (e.phase === "placed"    && e.tick >= PLACED_TICKS)                         this.arm(e, terrain);
       else if (e.phase === "armed"     && e.tick >= ARMED_TICKS)                          this.explode(e);
       else if (e.phase === "exploding" && e.tick >= EXPLODE_FRAME_COUNT * EXPLODE_TICKS_PER_FRAME) e.phase = "done";
     }

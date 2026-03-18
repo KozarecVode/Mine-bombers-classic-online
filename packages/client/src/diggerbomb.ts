@@ -28,6 +28,7 @@ const HB     = 12;
 // ── Manager ───────────────────────────────────────────────────────────────────
 
 export class DiggerBombManager {
+  isAuthority = true;
   private entities: DiggerBombEntity[] = [];
   private nextId = 0;
 
@@ -53,7 +54,7 @@ export class DiggerBombManager {
       if (e.phase === "fusing" && e.tick >= FUSE_TICKS) {
         e.phase = "exploding";
         e.tick = 0;
-        if (this.applyExplosion(e, terrain, detailMap)) terrainChanged = true;
+        if (this.applyExplosion(e, terrain, detailMap, this.isAuthority)) terrainChanged = true;
       } else if (e.phase === "exploding" && e.tick >= EXPLODE_TICKS_PER_FRAME * EXPLODE_FRAME_COUNT) {
         e.phase = "done";
       }
@@ -62,7 +63,7 @@ export class DiggerBombManager {
     return terrainChanged;
   }
 
-  private applyExplosion(e: DiggerBombEntity, terrain: Terrain, detailMap: TerrainDetailMap): boolean {
+  private applyExplosion(e: DiggerBombEntity, terrain: Terrain, detailMap: TerrainDetailMap, modifyTerrain: boolean): boolean {
     const rows = terrain.length, cols = terrain[0].length;
     const col = e.tileX, row = e.tileY;
     if (row <= 0 || row >= rows - 1 || col <= 0 || col >= cols - 1) { e.cells = []; return false; }
@@ -84,10 +85,9 @@ export class DiggerBombManager {
         visited.add(key);
         const t = detailMap[nr][nc].type;
         if (!t.startsWith("solid_rock") && !t.startsWith("rock_")) continue;
-        setTerrainTile(detailMap, terrain, nc, nr, "ground", true);
+        if (modifyTerrain) { setTerrainTile(detailMap, terrain, nc, nr, "ground", true); terrainChanged = true; }
         e.cells.push([nc, nr]);
         queue.push([nc, nr]);
-        terrainChanged = true;
       }
     }
     return terrainChanged;
@@ -109,7 +109,7 @@ export class DiggerBombManager {
       if (e.phase === "fusing" && fireCells.has(`${e.tileX},${e.tileY}`)) {
         e.phase = "exploding";
         e.tick = 0;
-        if (this.applyExplosion(e, terrain, detailMap)) terrainChanged = true;
+        if (this.applyExplosion(e, terrain, detailMap, this.isAuthority)) terrainChanged = true;
       }
     }
     return terrainChanged;

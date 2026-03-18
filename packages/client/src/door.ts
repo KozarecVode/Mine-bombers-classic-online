@@ -43,6 +43,10 @@ export class DoorManager {
     return !this.open && this.doorKeys.has(`${col},${row}`);
   }
 
+  hasAt(col: number, row: number): boolean {
+    return this.doorKeys.has(`${col},${row}`);
+  }
+
   tryPush(_col: number, _row: number, _dc: number, _dr: number, _terrain: Terrain): boolean {
     return false;
   }

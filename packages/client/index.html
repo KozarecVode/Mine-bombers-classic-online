@@ -361,7 +361,6 @@
         right: 0;
         text-align: left;
         font-size: 5px;
-        font-weight: bold;
         color: #ffe800;
         font-family: "Good Old DOS", monospace;
         z-index: 2;
@@ -386,6 +385,24 @@
         transition: height 0.15s ease;
         flex-shrink: 0;
       }
+      @keyframes ready-pulse {
+        0%,
+        100% {
+          opacity: 0;
+        }
+        50% {
+          opacity: 1;
+        }
+      }
+      .shop-item--ready.has-items:not(.is-ready)::after {
+        content: "";
+        position: absolute;
+        inset: 0;
+        border: 1px solid rgba(255, 220, 0, 0.7);
+        z-index: 10;
+        pointer-events: none;
+        animation: ready-pulse 1.4s ease-in-out infinite;
+      }
 
       /* ── Shop right panel ───────────────────────────────────────────── */
       #shop-right {
@@ -401,8 +418,25 @@
         box-sizing: border-box;
         padding: 6px 4px 0 4px;
       }
-      #shop-level-select {
+      #shop-map-row {
         flex: 0 0 auto;
+        display: flex;
+        align-items: center;
+        gap: 3px;
+        width: 100%;
+        margin-bottom: 4px;
+        margin-top: 2px;
+      }
+      #shop-map-label {
+        font-family: "Good Old DOS", "Courier New", monospace;
+        font-size: 4px;
+        font-weight: bold;
+        color: #aaa;
+        white-space: nowrap;
+        flex-shrink: 0;
+      }
+      #shop-level-select {
+        flex: 1;
         width: 100%;
         background: #111;
         border: 1px solid #555;
@@ -412,9 +446,10 @@
         padding: 1px 3px;
         box-sizing: border-box;
         outline: none;
-        margin-bottom: 4px;
+        margin-bottom: 0;
+        margin-right: 3px;
         width: 99%;
-        margin-top: 2px;
+        margin-top: 0;
         appearance: none;
         -webkit-appearance: none;
         background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='6' height='4'%3E%3Cpath d='M0 0l3 4 3-4z' fill='%23aaa'/%3E%3C/svg%3E");
@@ -748,7 +783,10 @@
 
         <!-- Right panel: player list, chat -->
         <div id="shop-right">
-          <select id="shop-level-select"></select>
+          <div id="shop-map-row">
+            <span id="shop-map-label">MAP:</span>
+            <select id="shop-level-select"></select>
+          </div>
           <div id="shop-player-list"></div>
           <div id="shop-chat-log"></div>
           <div class="shop-chat-row">

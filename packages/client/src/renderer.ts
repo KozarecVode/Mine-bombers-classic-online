@@ -139,12 +139,12 @@ export class Renderer {
     this.drawTeleports(assets, teleport);
     this.drawUrethane(assets, urethane, "placed");
     this.drawPlastic(assets, plastic, "placed");
-    this.drawTnt(assets, tnt);
+    this.drawTnt(assets, tnt, door, doorSwitch);
     this.drawCross(assets.bigcross, bigCross);
     this.drawCross(assets.smallcross, smallCross);
     this.drawGrenades(assets, grenade);
-    this.drawBomb(assets.smallbomb, smallBomb);
-    this.drawBomb(assets.bigbomb, bigBomb);
+    this.drawBomb(assets.smallbomb, smallBomb, door, doorSwitch);
+    this.drawBomb(assets.bigbomb, bigBomb, door, doorSwitch);
     this.drawLandmines(assets, landmine);
     this.drawFlameBomb(assets, flameBomb);
     this.drawFlamethrower(assets, flamethrower);
@@ -471,10 +471,10 @@ export class Renderer {
 
   // ── TNT ────────────────────────────────────────────────────────────────────
 
-  private drawTnt(assets: Assets, tnt: TntManager): void {
+  private drawTnt(assets: Assets, tnt: TntManager, door: DoorManager, doorSwitch: DoorSwitchManager): void {
     for (const e of tnt.getEntities()) {
       if (e.phase === "exploding") {
-        this.drawTntExplosion(assets, tnt, e);
+        this.drawTntExplosion(assets, tnt, e, door, doorSwitch);
       }
       this.drawTntSprite(assets, tnt, e);
     }
@@ -494,10 +494,11 @@ export class Renderer {
     this.ctx.drawImage(sprite, x, y, TILE_SIZE, TILE_SIZE);
   }
 
-  private drawTntExplosion(assets: Assets, tnt: TntManager, e: TntEntity): void {
+  private drawTntExplosion(assets: Assets, tnt: TntManager, e: TntEntity, door: DoorManager, doorSwitch: DoorSwitchManager): void {
     const frame = assets.tnt.explosion[tnt.explosionFrame(e)];
     for (const [col, row] of tnt.explosionCells(e)) {
       if (this._terrain && isStone(this._terrain, col, row)) continue;
+      if (door.hasAt(col, row) || doorSwitch.hasSolidAt(col, row)) continue;
       const x = col * TILE_SIZE;
       const y = row * TILE_SIZE + HUD_HEIGHT;
       this.ctx.drawImage(frame, x, y, TILE_SIZE, TILE_SIZE);
@@ -525,11 +526,14 @@ export class Renderer {
   private drawBomb(
     bombAssets: { fuse: HTMLCanvasElement[]; disabled: HTMLCanvasElement; explosion: HTMLCanvasElement[] },
     mgr: BombManager,
+    door: DoorManager,
+    doorSwitch: DoorSwitchManager,
   ): void {
     for (const e of mgr.getEntities()) {
       if (e.phase === "exploding") {
         const frame = bombAssets.explosion[mgr.explosionFrame(e)];
         for (const [col, row] of e.cells) {
+          if (door.hasAt(col, row) || doorSwitch.hasSolidAt(col, row)) continue;
           this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
         }
       } else if (e.phase === "fusing") {

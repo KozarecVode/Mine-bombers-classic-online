@@ -75,6 +75,7 @@ const shopPlayerListEl = document.getElementById("shop-player-list")!;
 const shopChatLogEl = document.getElementById("shop-chat-log")!;
 const shopChatInput = document.getElementById("shop-chat-input") as HTMLInputElement;
 const shopLevelSelect = document.getElementById("shop-level-select") as HTMLSelectElement;
+const shopMapRowEl = document.getElementById("shop-map-row") as HTMLElement;
 const gameEl = document.getElementById("game")!;
 const createGameEl = document.getElementById("create-game")!;
 const cgShovelEl = document.getElementById("cg-shovel") as HTMLImageElement;
@@ -270,6 +271,18 @@ function openTournamentOverScreen(): void {
 const levelData = new Map<string, Uint8Array>();
 let selectedLevel: string | null = null;
 let cachedRandomLevel: ReturnType<typeof generateRandomLevel> | null = null;
+
+function refreshRandomMap(): void {
+  const allKeys = [null, ...levelData.keys()];
+  const picked = allKeys[Math.floor(Math.random() * allKeys.length)];
+  if (picked && levelData.has(picked)) {
+    cachedRandomLevel = null;
+    updateShopMapThumb(buildThumbnail(levelData.get(picked)!));
+  } else {
+    cachedRandomLevel = generateRandomLevel(tournamentConfig.treasures);
+    updateShopMapThumb(buildThumbnailFromParsed(cachedRandomLevel));
+  }
+}
 
 const input = new InputManager();
 const renderer = new Renderer();
@@ -586,7 +599,7 @@ function buildShopGrid(): void {
   shopGridEl.innerHTML = "";
   SHOP_ITEMS.forEach((item, idx) => {
     const cell = document.createElement("div");
-    cell.className = "shop-item";
+    cell.className = item.id === "__ready__" ? "shop-item shop-item--ready" : "shop-item";
     cell.dataset.idx = String(idx);
 
     const bg = document.createElement("img");
@@ -641,6 +654,10 @@ function updateShopGrid(): void {
     const item = SHOP_ITEMS[idx];
     const isReady = item.id === "__ready__" && playerIsReady;
     bg.src = isSelected || isReady ? "/art/ui/shop/item_frame_selected.png" : "/art/ui/shop/item_frame.png";
+    if (item.id === "__ready__") {
+      cell.classList.toggle("is-ready", playerIsReady);
+      cell.classList.toggle("has-items", playerInventory.size > 0);
+    }
 
     const owned = playerInventory.get(item.id) ?? 0;
     const barFill = cell.querySelector<HTMLElement>(".shop-item-bar-fill")!;
@@ -725,9 +742,12 @@ function startGameFromLobby(): void {
   player.name = shopNameInput.value.trim() || "Player";
   setSlotActive(player.color, player.name);
 
-  const isLoadedMap = !!(selectedLevel && levelData.has(selectedLevel));
+  const resolvedLevel = selectedLevel === "__random__"
+    ? ([null, ...levelData.keys()])[Math.floor(Math.random() * (levelData.size + 1))]
+    : selectedLevel;
+  const isLoadedMap = !!(resolvedLevel && levelData.has(resolvedLevel));
   const parsed = isLoadedMap
-    ? parseMneLevel(levelData.get(selectedLevel!)!)
+    ? parseMneLevel(levelData.get(resolvedLevel!)!)
     : (cachedRandomLevel ?? generateRandomLevel(tournamentConfig.treasures));
   cachedRandomLevel = null;
   applyParsedLevel(parsed);
@@ -972,8 +992,18 @@ function applyRemoteWeapon(
   ownerId = 0,
   actorColor = 0,
 ): void {
-  const tx = rp.tileX * TILE_SIZE,
-    ty = rp.tileY * TILE_SIZE;
+  // Parse optional tile-position suffix: "tnt@12:8" → weapon="tnt", placeTileX=12, placeTileY=8
+  const atIdx = action.indexOf("@");
+  let weapon = action, placeTileX = rp.tileX, placeTileY = rp.tileY;
+  if (atIdx !== -1) {
+    weapon = action.slice(0, atIdx);
+    const parts = action.slice(atIdx + 1).split(":");
+    placeTileX = parseInt(parts[0], 10);
+    placeTileY = parseInt(parts[1], 10);
+    action = weapon; // normalise for comparisons below
+  }
+  const tx = placeTileX * TILE_SIZE,
+    ty = placeTileY * TILE_SIZE;
   if (action === "__detonate__") {
     smallDetMgr.detonate(terrain);
     bigDetMgr.detonate(terrain);
@@ -1017,9 +1047,10 @@ function applyRemoteWeapon(
   else if (PICKABLE_TYPES.includes(action as (typeof PICKABLE_TYPES)[number]))
     pickableMgr.place(rp.x, rp.y, terrain, action as (typeof PICKABLE_TYPES)[number]);
 
-  // HOST: broadcast all remote weapon placements so every client can place the entity locally
+  // HOST: broadcast all remote weapon placements so every client can place the entity locally.
+  // Use the parsed placeTileX/placeTileY so the echoed position matches the client-side placement.
   if (netMgr.connected && netMgr.isHost && action !== "__detonate__")
-    netMgr.sendWeaponAct(action, rp.x, rp.y, rp.tileX, rp.tileY, rp.dir as NetDir, rp.moving, actorColor, ownerId);
+    netMgr.sendWeaponAct(action, rp.x, rp.y, placeTileX, placeTileY, rp.dir as NetDir, rp.moving, actorColor, ownerId);
 }
 
 function applyParsedLevel(parsed: ReturnType<typeof parseMneLevel>): void {
@@ -1137,6 +1168,11 @@ async function loadLevelThumbnails(): Promise<void> {
   randomOpt.textContent = "DEFAULT";
   shopLevelSelect.appendChild(randomOpt);
 
+  const trueRandomOpt = document.createElement("option");
+  trueRandomOpt.value = "__random__";
+  trueRandomOpt.textContent = "RANDOM";
+  shopLevelSelect.appendChild(trueRandomOpt);
+
   // Generate random level and show thumbnail immediately
   cachedRandomLevel = generateRandomLevel(tournamentConfig.treasures);
   updateShopMapThumb(buildThumbnailFromParsed(cachedRandomLevel));
@@ -1161,7 +1197,9 @@ async function loadLevelThumbnails(): Promise<void> {
 
   shopLevelSelect.addEventListener("change", () => {
     selectedLevel = shopLevelSelect.value || null;
-    if (selectedLevel && levelData.has(selectedLevel)) {
+    if (selectedLevel === "__random__") {
+      refreshRandomMap();
+    } else if (selectedLevel && levelData.has(selectedLevel)) {
       updateShopMapThumb(buildThumbnail(levelData.get(selectedLevel)!));
     } else {
       cachedRandomLevel = generateRandomLevel(tournamentConfig.treasures);
@@ -1244,7 +1282,12 @@ function canUseWeapon(id: string): boolean {
 function consumeWeapon(id: string): void {
   if (!SHOP_WEAPON_IDS.has(id)) return;
   const cur = gameInventory.get(id) ?? 0;
-  if (cur > 0) gameInventory.set(id, cur - 1);
+  if (cur > 0) {
+    gameInventory.set(id, cur - 1);
+    const pc = playerInventory.get(id) ?? 0;
+    if (pc > 0) playerInventory.set(id, pc - 1);
+    updateShopGrid();
+  }
 }
 
 function nextAvailableWeapon(current: WeaponName): WeaponName {
@@ -1571,6 +1614,8 @@ function returnToLobby(clientBankedCash?: number): void {
   } else {
     shopEl.style.display = "flex";
   }
+
+  if (selectedLevel === "__random__") refreshRandomMap();
 }
 
 // ── Asset loading ──────────────────────────────────────────────────────────────
@@ -1851,19 +1896,24 @@ netMgr.onAssign = (playerId, isHost) => {
   smallBombMgr.isAuthority = authority;
   bigBombMgr.isAuthority = authority;
   landmineMgr.isAuthority = authority;
+  diggerBombMgr.isAuthority = authority;
 
   if (isHost) {
-    shopLevelSelect.style.display = "";
+    shopMapRowEl.style.display = "";
     addChatMessage("System", "Waiting for all players to ready up...");
     broadcastLobby();
   } else {
-    shopLevelSelect.style.display = "none";
+    shopMapRowEl.style.display = "none";
     addChatMessage("System", "Waiting for all players to ready up...");
     netMgr.sendName(name);
   }
 };
 
 netMgr.onPlayerJoin = (pid) => {
+  if (gameEl.style.display !== "none") {
+    netMgr.sendGameInProgress();
+    return;
+  }
   const [tx, ty] = spawnPos(pid);
   const color = (pid - 1) % 4;
   remotePlayers.set(pid, createLocalPlayer(`Player${pid}`, color, tx, ty));
@@ -1872,27 +1922,39 @@ netMgr.onPlayerJoin = (pid) => {
   renderShopPlayerList();
   broadcastLobby();
   netMgr.sendConfig({ ...tournamentConfig });
+  netMgr.sendMapSelect(selectedLevel);
 };
 
 netMgr.onPlayerLeave = (pid) => {
+  const leavingName = lobbyPlayers.get(pid)?.name ?? `Player${pid}`;
   remotePlayers.delete(pid);
   lobbyPlayers.delete(pid);
   renderShopPlayerList();
   broadcastLobby();
+  addChatMessage("System", `${leavingName} has left the game`);
 };
 
-netMgr.onPromotedHost = () => {
-  prevTerrain = terrain.map((row) => [...row]);
-  prevDetailType = detailMap.map((row) => row.map((c) => c.type));
-  prevBurnedGround = detailMap.map((row) => row.map((c) => !!c.burnedGround));
-  shopLevelSelect.style.display = "";
-  broadcastLobby();
+netMgr.onHostLeft = () => {
+  netMgr.disconnect();
+  openMainMenu();
+  addChatMessage("System", "Host left — tournament ended.");
+};
+
+netMgr.onGameInProgress = () => {
+  // Only act if we just joined and are sitting in the shop — ignore if already in-game
+  if (gameEl.style.display !== "none") return;
+  netMgr.disconnect();
+  shopEl.style.display = "none";
+  openJoinGame();
+  setJgStatus("Round in progress — try again later", true);
 };
 
 netMgr.onPlayerName = (pid, name) => {
   const entry = lobbyPlayers.get(pid);
+  const isFirstName = !entry || entry.name === `Player${pid}`;
   if (entry) entry.name = name;
   else lobbyPlayers.set(pid, { name, color: (pid - 1) % 4 });
+  if (isFirstName) addChatMessage("System", `${name} has joined the game`);
   const rp = remotePlayers.get(pid);
   if (rp) rp.name = name;
   setSlotActive((pid - 1) % 4, name);
@@ -1919,6 +1981,18 @@ netMgr.onLobbyUpdate = (players) => {
     if (!players.find((p) => p.id === pid)) remotePlayers.delete(pid);
   }
   renderShopPlayerList();
+
+  if (!netMgr.isHost) {
+    const myName = shopNameInput.value.trim() || "Player";
+    const otherNames = new Set(players.filter(p => p.id !== netMgr.localPlayerId).map(p => p.name));
+    if (otherNames.has(myName)) {
+      let n = 2;
+      while (otherNames.has(`Player ${n}`)) n++;
+      const newName = `Player ${n}`;
+      shopNameInput.value = newName;
+      netMgr.sendName(newName);
+    }
+  }
 };
 
 netMgr.onMapSelect = (level) => {
@@ -1934,7 +2008,10 @@ netMgr.onMapSelect = (level) => {
 
 netMgr.onGameConfig = (cfg) => {
   // Clients always defer to the host's config
-  if (!netMgr.isHost) Object.assign(tournamentConfig, cfg);
+  if (!netMgr.isHost) {
+    Object.assign(tournamentConfig, cfg);
+    renderOptions();
+  }
 };
 
 netMgr.onChat = (name, text, fromPlayerId, senderPlayerId) => {
@@ -2082,8 +2159,13 @@ netMgr.onWeaponAct = (weapon, x, y, tileX, tileY, dir, moving, actorColor, owner
     }
     return;
   }
-  // Skip weapons the local player already placed themselves (host re-broadcasts to all)
-  if (ownerId !== undefined && ownerId === netMgr.localPlayerId) return;
+  // Host confirmation of own placement — start local fuse timer for bomb types
+  if (ownerId !== undefined && ownerId === netMgr.localPlayerId) {
+    if (weapon === "tnt")        tntMgr.enableSelfAuthorityAt(tileX, tileY);
+    else if (weapon === "smallbomb")  smallBombMgr.enableSelfAuthorityAt(tileX, tileY);
+    else if (weapon === "bigbomb")    bigBombMgr.enableSelfAuthorityAt(tileX, tileY);
+    return;
+  }
   applyRemoteWeapon({ x, y, tileX, tileY, dir: dir as Dir, moving }, weapon, actorColor, actorColor);
 };
 
@@ -2444,7 +2526,13 @@ function loop(ts: number): void {
     // CLIENT: place weapons locally for visuals, AND forward to host for authoritative sim
     if (!player.dead && input.consumeWeaponSwitch()) selectedWeapon = nextAvailableWeapon(selectedWeapon);
     const netActions: string[] = [];
-    if (!player.dead && input.consumeTntPress() && canUseWeapon(selectedWeapon)) netActions.push(selectedWeapon);
+    if (!player.dead && input.consumeTntPress() && canUseWeapon(selectedWeapon)) {
+      // Encode bomb/tnt placement tile so the host places at exactly this tile and echoes it back
+      const tileAction = (selectedWeapon === "tnt" || selectedWeapon === "smallbomb" || selectedWeapon === "bigbomb" || selectedWeapon === "flamebomb")
+        ? `${selectedWeapon}@${player.tileX}:${player.tileY}`
+        : selectedWeapon;
+      netActions.push(tileAction);
+    }
     if (!player.dead && input.consumeDetonatePress()) netActions.push("__detonate__");
     if (!player.dead && input.consumeFireExtPress() && canUseWeapon("fireextinguisher")) netActions.push("__fireext__");
     input.consumeTreasurePress();
@@ -2454,7 +2542,7 @@ function loop(ts: number): void {
     netMgr.sendInput(inputDir as NetDir, netActions, player.digPower, playerGold, inputSeq);
     inputSendTimes.set(inputSeq, Date.now());
     // Mirror weapon placement locally so bombs/explosions are visible on client
-    if (!player.dead && netActions.includes(selectedWeapon)) {
+    if (!player.dead && netActions.some(a => a === selectedWeapon || a.startsWith(selectedWeapon + "@"))) {
       consumeWeapon(selectedWeapon);
       if (selectedWeapon === "tnt") tntMgr.place(tileX, tileY, "none", terrain);
       else if (selectedWeapon === "bigcross") bigCrossMgr.place(tileX, tileY, "none", terrain);
@@ -2651,7 +2739,7 @@ function loop(ts: number): void {
   smallDetMgr.update(player.x, player.y, terrain);
   bigDetMgr.update(player.x, player.y, terrain);
   urethaneMgr.update();
-  plasticMgr.update();
+  plasticMgr.update(terrain);
   nuclearMgr.update();
   jumpingBombMgr.update(terrain);
   const lavaBlocked = (c: number, r: number) =>

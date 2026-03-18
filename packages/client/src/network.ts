@@ -18,7 +18,8 @@ export class NetworkManager {
   onAssign?: (playerId: number, isHost: boolean) => void;
   onPlayerJoin?: (playerId: number) => void;
   onPlayerLeave?: (playerId: number) => void;
-  onPromotedHost?: () => void;
+  onHostLeft?: () => void;
+  onGameInProgress?: () => void;
   onInitData?: (data: LevelInitData) => void;
   onStateUpdate?: (players: NetPlayer[], monsters: NetMonster[], pushables: NetPushable[], clones: NetClone[], doorSwitchOn: boolean, doorOpen: boolean, lava: Array<{ id: number; cells: [number, number][] }>, urethane: Array<{ id: number; phase: string; cells: [number, number][] }>, plastic: Array<{ id: number; phase: string; armedCells: [number, number][]; explosionCells: [number, number][] }>, roundTick: number) => void;
   onTerrainChange?: (changes: TerrainChange[]) => void;
@@ -67,9 +68,11 @@ export class NetworkManager {
         this.remoteInputs.delete(msg.playerId);
         this.onPlayerLeave?.(msg.playerId);
         break;
-      case 'promoted_host':
-        this.isHost = true;
-        this.onPromotedHost?.();
+      case 'host_left':
+        this.onHostLeft?.();
+        break;
+      case 'game_in_progress':
+        this.onGameInProgress?.();
         break;
       case 'init': {
         const { terrain, detailMap, entities, spawnCol, spawnRow, playerSpawns } = msg;
@@ -186,6 +189,10 @@ export class NetworkManager {
   // HOST: broadcast selected map to all clients
   sendMapSelect(level: string | null): void {
     this.send({ type: 'map_select', level });
+  }
+
+  sendGameInProgress(): void {
+    this.send({ type: 'game_in_progress' });
   }
 
   // HOST: push authoritative tournament config to all clients

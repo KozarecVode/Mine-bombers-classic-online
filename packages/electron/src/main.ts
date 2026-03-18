@@ -53,9 +53,14 @@ const wss = new WebSocketServer({ port: WS_PORT });
 
 interface Conn { ws: WebSocket; playerId: number; }
 
-let nextId = 1;
 let hostId: number | null = null;
 const conns = new Map<number, Conn>();
+
+function nextAvailableId(): number {
+  let id = 1;
+  while (conns.has(id) && conns.get(id)!.ws.readyState === WebSocket.OPEN) id++;
+  return id;
+}
 
 function broadcast(data: string, excludeId: number): void {
   for (const [id, c] of conns) {
@@ -64,7 +69,7 @@ function broadcast(data: string, excludeId: number): void {
 }
 
 wss.on("connection", (ws: WebSocket) => {
-  const playerId = nextId++;
+  const playerId = nextAvailableId();
   const isHost = conns.size === 0;
   if (isHost) hostId = playerId;
   conns.set(playerId, { ws, playerId });
@@ -94,14 +99,9 @@ wss.on("connection", (ws: WebSocket) => {
     broadcast(JSON.stringify({ type: "player_leave", playerId }), playerId);
 
     if (playerId === hostId) {
-      const next = conns.values().next().value as Conn | undefined;
-      if (next) {
-        hostId = next.playerId;
-        next.ws.send(JSON.stringify({ type: "promoted_host" }));
-      } else {
-        hostId = null;
-        nextId = 1;
-      }
+      broadcast(JSON.stringify({ type: "host_left" }), playerId);
+      hostId = null;
+      conns.clear();
     }
   });
 });
