@@ -25,7 +25,7 @@ const EXPLODE_FRAME_COUNT = 11;
 const EXPLODE_TICKS_PER_FRAME = 1;
 const TOTAL_EXPLODE_TICKS = FLASH_TICKS + EXPLODE_FRAME_COUNT * EXPLODE_TICKS_PER_FRAME;
 const CHAIN_FRAME_CUTOFF = 6;
-const CIRCLE_RADIUS = 22;
+const CIRCLE_RADIUS = 14;
 
 // ── Helpers ───────────────────────────────────────────────────────────────────
 
@@ -130,10 +130,19 @@ export class NuclearManager {
     return Math.min(Math.floor(t / EXPLODE_TICKS_PER_FRAME), EXPLODE_FRAME_COUNT - 1);
   }
 
-  hasSolidAt(_col: number, _row: number): boolean {
-    return false;
+  hasSolidAt(col: number, row: number): boolean {
+    return this.entities.some(e => e.phase === "fusing" && e.centerX === col && e.centerY === row);
   }
-  tryPush(_col: number, _row: number, _dc: number, _dr: number, _terrain: Terrain): boolean {
+
+  tryPush(col: number, row: number, dc: number, dr: number, terrain: Terrain): boolean {
+    const e = this.entities.find(e => e.phase === "fusing" && e.centerX === col && e.centerY === row);
+    if (!e) return true;
+    const nc = col + dc, nr = row + dr;
+    if (isStone(terrain, nc, nr)) return false;
+    if (this.hasSolidAt(nc, nr)) return false;
+    e.centerX = nc;
+    e.centerY = nr;
+    e.cells = buildCircle(nc, nr, terrain);
     return true;
   }
 

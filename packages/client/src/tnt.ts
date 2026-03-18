@@ -55,6 +55,7 @@ const TNT_PATTERN: [number, number][] = [
 // ── Manager ──────────────────────────────────────────────────────────────────
 
 export class TntManager {
+  isAuthority = true; // false on clients — dud/explode decision comes from host via forcePhaseAt
   private entities: TntEntity[] = [];
   private nextId = 0;
 
@@ -95,7 +96,7 @@ export class TntManager {
         if (!overlaps) e.grace = false;
       }
 
-      if (e.phase === 'fusing' && e.tick >= FUSE_TICKS_PER_FRAME * 3) {
+      if (e.phase === 'fusing' && e.tick >= FUSE_TICKS_PER_FRAME * 3 && this.isAuthority) {
         e.tick = 0;
         if (Math.random() < DUD_CHANCE) {
           e.phase = 'disabled';

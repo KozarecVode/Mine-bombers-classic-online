@@ -97,7 +97,8 @@ export class GrenadierManager {
     allPlayers: { tileX: number; tileY: number }[],
     grenadeMgr: GrenadeManager,
     applyDig?: (col: number, row: number, digPower: number) => void,
-  ): void {
+  ): { tileX: number; tileY: number; dir: Exclude<Dir, 'none'> }[] {
+    const throws: { tileX: number; tileY: number; dir: Exclude<Dir, 'none'> }[] = [];
     for (const e of this.entities) {
       if (e.phase === "dead") continue;
       if (allPlayers.length === 0) continue;
@@ -124,7 +125,9 @@ export class GrenadierManager {
         e.dir = losDir;
         e.throwCooldown--;
         if (e.throwCooldown <= 0) {
-          grenadeMgr.placeAt(e.tileX, e.tileY, losDir as Exclude<Dir, "none">, terrain);
+          const throwDir = losDir as Exclude<Dir, "none">;
+          grenadeMgr.placeAt(e.tileX, e.tileY, throwDir, terrain);
+          throws.push({ tileX: e.tileX, tileY: e.tileY, dir: throwDir });
           e.throwCooldown = THROW_COOLDOWN;
         }
       } else {
@@ -173,6 +176,7 @@ export class GrenadierManager {
         }
       }
     }
+    return throws;
   }
 
   // ── LOS ──────────────────────────────────────────────────────────────────────

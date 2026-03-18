@@ -28,6 +28,7 @@ const HB     = 12;
 
 
 export class LandmineManager {
+  isAuthority = true; // false on clients — triggers come from host via triggerAt
   private entities: LandmineEntity[] = [];
   private nextId = 0;
 
@@ -40,27 +41,39 @@ export class LandmineManager {
     this.entities.push({ id: this.nextId++, tileX, tileY, phase: 'armed', tick: 0, grace: true, cells: [] });
   }
 
-  update(playerX: number, playerY: number, terrain: Terrain): void {
-    const pl = playerX + MARGIN, pr = playerX + MARGIN + HB;
-    const pt = playerY + MARGIN, pb = playerY + MARGIN + HB;
+  update(players: { x: number; y: number }[], terrain: Terrain): { tileX: number; tileY: number }[] {
+    const triggered: { tileX: number; tileY: number }[] = [];
 
     for (const e of this.entities) {
       e.tick++;
-      if (e.phase === 'armed') {
-        const tx = e.tileX * TILE_SIZE, ty = e.tileY * TILE_SIZE;
-        const overlaps = pl < tx + TILE_SIZE && pr > tx && pt < ty + TILE_SIZE && pb > ty;
-        if (e.grace) {
-          if (!overlaps) e.grace = false;
-        } else if (overlaps) {
-          this.triggerExplosion(e, terrain);
+      if (e.phase === 'armed' && this.isAuthority) {
+        for (const p of players) {
+          const pl = p.x + MARGIN, pr = p.x + MARGIN + HB;
+          const pt = p.y + MARGIN, pb = p.y + MARGIN + HB;
+          const tx = e.tileX * TILE_SIZE, ty = e.tileY * TILE_SIZE;
+          const overlaps = pl < tx + TILE_SIZE && pr > tx && pt < ty + TILE_SIZE && pb > ty;
+          if (e.grace) {
+            if (!overlaps) e.grace = false;
+          } else if (overlaps) {
+            this.triggerExplosion(e, terrain);
+            triggered.push({ tileX: e.tileX, tileY: e.tileY });
+            break;
+          }
         }
       } else if (e.phase === 'exploding' && e.tick >= EXPLODE_TICKS_PER_FRAME * EXPLODE_FRAME_COUNT) {
         e.phase = 'done';
       }
     }
 
-    this.chainDetonate(this.getFireCells(), terrain);
+    triggered.push(...this.chainDetonate(this.getFireCells(), terrain));
     this.entities = this.entities.filter(e => e.phase !== 'done');
+    return triggered;
+  }
+
+  /** Trigger the landmine at a specific tile (called on clients from host broadcast). */
+  triggerAt(tileX: number, tileY: number, terrain: Terrain): void {
+    const e = this.entities.find(e => e.phase === 'armed' && e.tileX === tileX && e.tileY === tileY);
+    if (e) this.triggerExplosion(e, terrain);
   }
 
   private triggerExplosion(e: LandmineEntity, terrain: Terrain): void {
@@ -87,12 +100,16 @@ export class LandmineManager {
     return cells;
   }
 
-  chainDetonate(cells: Set<string>, terrain: Terrain): void {
+  chainDetonate(cells: Set<string>, terrain: Terrain): { tileX: number; tileY: number }[] {
+    const triggered: { tileX: number; tileY: number }[] = [];
+    if (!this.isAuthority) return triggered;
     for (const e of this.entities) {
       if (e.phase === 'armed' && !e.grace && cells.has(`${e.tileX},${e.tileY}`)) {
         this.triggerExplosion(e, terrain);
+        triggered.push({ tileX: e.tileX, tileY: e.tileY });
       }
     }
+    return triggered;
   }
 
   /** Blocks grenades (and other projectiles) but not the player. */

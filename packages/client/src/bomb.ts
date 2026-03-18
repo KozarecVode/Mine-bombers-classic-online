@@ -26,6 +26,7 @@ const CHAIN_FRAME_CUTOFF = 6;
 // ── Manager ──────────────────────────────────────────────────────────────────
 
 export class BombManager {
+  isAuthority = true; // false on clients — dud/explode decision comes from host via forcePhaseAt
   private entities: BombEntity[] = [];
   private nextId = 0;
   private static readonly MARGIN = 1;
@@ -65,7 +66,7 @@ export class BombManager {
         const overlaps = pl < tx + TILE_SIZE && pr > tx && pt < ty + TILE_SIZE && pb > ty;
         if (!overlaps) e.grace = false;
       }
-      if (e.phase === "fusing" && e.tick >= FUSE_TICKS_PER_FRAME * 3) {
+      if (e.phase === "fusing" && e.tick >= FUSE_TICKS_PER_FRAME * 3 && this.isAuthority) {
         if (Math.random() < DUD_CHANCE) {
           e.phase = "disabled";
           e.tick = 0;

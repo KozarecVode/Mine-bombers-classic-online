@@ -129,6 +129,7 @@ export class InputManager {
 
   /** Clear all buffered presses — call before starting a game round. */
   flush(): void {
+    this._committedDir = 'none';
     this._tntPressed = false;
     this._bigCrossPressed = false;
     this._weaponSwitchPressed = false;

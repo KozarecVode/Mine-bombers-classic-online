@@ -1,5 +1,5 @@
 import { TILE_SIZE, MAP_WIDTH, MAP_HEIGHT, HUD_HEIGHT } from "@minebombers/shared";
-import { Terrain, TerrainDetailMap, isHardDigTile } from "./terrain.js";
+import { Terrain, TerrainDetailMap, isHardDigTile, isStone } from "./terrain.js";
 import { LocalPlayer } from "./game.js";
 import { Assets } from "./assets.js";
 import { TntManager, TntEntity } from "./tnt.js";
@@ -73,6 +73,7 @@ export class Renderer {
   }
 
   private _assets: Assets | null = null;
+  private _terrain: Terrain | null = null;
 
   render(
     assets: Assets,
@@ -117,6 +118,7 @@ export class Renderer {
     timeLimitTicks: number,
     playerGold: number,
   ): void {
+    this._terrain = terrain;
     const shake = nuclear.getShakeIntensity();
     if (shake > 0) {
       const MAX_SHAKE = 3;
@@ -194,6 +196,17 @@ export class Renderer {
     if (shake > 0) this.ctx.restore();
     this.drawNuclearFlash(nuclear);
     this.drawTimerBar(roundTick, timeLimitTicks);
+  }
+
+  // ── Reconciliation debug overlay ───────────────────────────────────────────
+
+  drawNetDebug(pingMs: number): void {
+    const ctx = this.ctx;
+    ctx.save();
+    ctx.font = "8px monospace";
+    ctx.fillStyle = "white";
+    ctx.fillText(`ping ${pingMs}ms`, 2, 10);
+    ctx.restore();
   }
 
   // ── Timer bar ──────────────────────────────────────────────────────────────
@@ -484,6 +497,7 @@ export class Renderer {
   private drawTntExplosion(assets: Assets, tnt: TntManager, e: TntEntity): void {
     const frame = assets.tnt.explosion[tnt.explosionFrame(e)];
     for (const [col, row] of tnt.explosionCells(e)) {
+      if (this._terrain && isStone(this._terrain, col, row)) continue;
       const x = col * TILE_SIZE;
       const y = row * TILE_SIZE + HUD_HEIGHT;
       this.ctx.drawImage(frame, x, y, TILE_SIZE, TILE_SIZE);

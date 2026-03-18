@@ -36,7 +36,7 @@ export class NetworkManager {
   private gameTick = 0;
   private remoteInputs = new Map<number, RemoteInput>();
   private lastRemoteInputSeq = new Map<number, number>();
-  private readonly SNAPSHOT_EVERY = 3;
+  private readonly SNAPSHOT_EVERY = 1;
 
   connect(serverUrl: string): Promise<void> {
     return new Promise((resolve, reject) => {
