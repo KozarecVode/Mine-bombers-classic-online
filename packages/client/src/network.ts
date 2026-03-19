@@ -8,6 +8,7 @@ export interface RemoteInput {
   digPower: number;
   gold: number;
   seq: number;
+  stopPressed: boolean;
 }
 
 export class NetworkManager {
@@ -36,8 +37,11 @@ export class NetworkManager {
   private ws: WebSocket | null = null;
   private gameTick = 0;
   private remoteInputs = new Map<number, RemoteInput>();
+  private inputQueues = new Map<number, RemoteInput[]>();
+  private lastProcessedInputSeq = new Map<number, number>();
   private lastRemoteInputSeq = new Map<number, number>();
   private readonly SNAPSHOT_EVERY = 1;
+  private readonly MAX_INPUT_QUEUE = 16;
 
   connect(serverUrl: string): Promise<void> {
     return new Promise((resolve, reject) => {
@@ -66,6 +70,8 @@ export class NetworkManager {
         break;
       case 'player_leave':
         this.remoteInputs.delete(msg.playerId);
+        this.inputQueues.delete(msg.playerId);
+        this.lastProcessedInputSeq.delete(msg.playerId);
         this.onPlayerLeave?.(msg.playerId);
         break;
       case 'host_left':
@@ -93,9 +99,17 @@ export class NetworkManager {
         break;
       case 'input':
         if (msg.fromPlayerId !== undefined) {
-          const seq = (msg as unknown as { seq?: number }).seq ?? 0;
-          this.remoteInputs.set(msg.fromPlayerId, { dir: msg.dir, actions: msg.actions, digPower: msg.digPower ?? 1, gold: msg.gold ?? 0, seq });
+          const seq = (msg as unknown as { seq?: number; stopPressed?: boolean }).seq ?? 0;
+          const stopPressed = (msg as unknown as { stopPressed?: boolean }).stopPressed ?? false;
+          const ri: RemoteInput = { dir: msg.dir, actions: msg.actions, digPower: msg.digPower ?? 1, gold: msg.gold ?? 0, seq, stopPressed };
+          // Also keep last-received for gold reads and fallback
+          this.remoteInputs.set(msg.fromPlayerId, ri);
           this.lastRemoteInputSeq.set(msg.fromPlayerId, seq);
+          // Enqueue for ordered processing — cap to prevent unbounded growth
+          const q = this.inputQueues.get(msg.fromPlayerId) ?? [];
+          q.push(ri);
+          if (q.length > this.MAX_INPUT_QUEUE) q.shift();
+          this.inputQueues.set(msg.fromPlayerId, q);
         }
         break;
       case 'item_remove':
@@ -201,18 +215,36 @@ export class NetworkManager {
   }
 
   // CLIENT: send direction + weapon actions to host each frame
-  sendInput(dir: NetDir, actions: string[], digPower: number, gold: number, seq = 0): void {
-    this.send({ type: 'input', dir, actions, digPower, gold, seq } as unknown as NetMsg);
+  sendInput(dir: NetDir, actions: string[], digPower: number, gold: number, seq = 0, stopPressed = false): void {
+    this.send({ type: 'input', dir, actions, digPower, gold, seq, stopPressed } as unknown as NetMsg);
   }
 
-  // HOST: read latest input from a remote player
+  // HOST: read latest input from a remote player (non-consuming, for gold/stats reads)
   getRemoteInput(playerId: number): RemoteInput {
-    return this.remoteInputs.get(playerId) ?? { dir: 'none', actions: [], digPower: 1, gold: 0, seq: 0 };
+    return this.remoteInputs.get(playerId) ?? { dir: 'none', actions: [], digPower: 1, gold: 0, seq: 0, stopPressed: false };
   }
 
-  // HOST: get last acknowledged input seq for a remote player
+  // HOST: dequeue the next input for movement processing — processes inputs in arrival order,
+  // preventing direction skips when multiple inputs arrive in the same frame window.
+  // Falls back to last received input (repeat direction) when queue is empty.
+  dequeueRemoteInput(playerId: number): RemoteInput {
+    const q = this.inputQueues.get(playerId);
+    if (q && q.length > 0) {
+      const input = q.shift()!;
+      this.lastProcessedInputSeq.set(playerId, input.seq);
+      // Store directionless fallback (no re-firing actions on repeat)
+      this.remoteInputs.set(playerId, { ...input, actions: [] });
+      return input;
+    }
+    // Queue empty: re-use last direction (player holds direction), no actions
+    const fallback = this.remoteInputs.get(playerId) ?? { dir: 'none', actions: [], digPower: 1, gold: 0, seq: 0, stopPressed: false };
+    this.lastProcessedInputSeq.set(playerId, fallback.seq);
+    return { ...fallback, actions: [] };
+  }
+
+  // HOST: get last *processed* input seq for a remote player (used to ack in snapshots)
   getLastRemoteInputSeq(playerId: number): number {
-    return this.lastRemoteInputSeq.get(playerId) ?? 0;
+    return this.lastProcessedInputSeq.get(playerId) ?? 0;
   }
 
   // HOST: clear actions after processing (actions are edge-triggered — one per press)

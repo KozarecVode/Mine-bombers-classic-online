@@ -41,7 +41,7 @@ function rand(min: number, max: number): number {
   return min + Math.floor(Math.random() * (max - min + 1));
 }
 
-function buildCircle(cx: number, cy: number, radius: number, terrain: Terrain): [number, number][] {
+function buildCircle(cx: number, cy: number, radius: number, terrain: Terrain, blocked: (c: number, r: number) => boolean): [number, number][] {
   const rows = terrain.length, cols = terrain[0].length;
   const result: [number, number][] = [];
   for (let dy = -radius; dy <= radius; dy++) {
@@ -50,20 +50,21 @@ function buildCircle(cx: number, cy: number, radius: number, terrain: Terrain): 
       const col = cx + dx, row = cy + dy;
       if (row < 0 || row >= rows || col < 0 || col >= cols) continue;
       if (row === 0 || row === rows - 1 || col === 0 || col === cols - 1) continue;
+      if (isStone(terrain, col, row) || blocked(col, row)) continue;
       result.push([col, row]);
     }
   }
   return result;
 }
 
-function computeJump(cx: number, cy: number, terrain: Terrain): [number, number] {
+function computeJump(cx: number, cy: number, terrain: Terrain, blocked: (c: number, r: number) => boolean): [number, number] {
   const rows = terrain.length, cols = terrain[0].length;
   const [dx, dy] = DIRS[Math.floor(Math.random() * DIRS.length)];
   const dist = rand(MIN_JUMP, MAX_JUMP);
   for (let d = dist; d >= 1; d--) {
     const nx = cx + dx * d, ny = cy + dy * d;
     if (nx < 1 || nx >= cols - 1 || ny < 1 || ny >= rows - 1) continue;
-    if (!isStone(terrain, nx, ny)) return [nx, ny];
+    if (!isStone(terrain, nx, ny) && !blocked(nx, ny)) return [nx, ny];
   }
   return [cx, cy];
 }
@@ -74,9 +75,10 @@ export class JumpingBombManager {
   private entities: JumpingBombEntity[] = [];
   private nextId = 0;
 
-  place(playerX: number, playerY: number, _terrain: Terrain): void {
+  place(playerX: number, playerY: number, _terrain: Terrain, blocked: (c: number, r: number) => boolean = () => false): void {
     const tileX = Math.round(playerX / TILE_SIZE);
     const tileY = Math.round(playerY / TILE_SIZE);
+    if (blocked(tileX, tileY)) return; // don't place on walls/doors/switches
     this.entities.push({
       id: this.nextId++,
       tick: 0,
@@ -89,11 +91,11 @@ export class JumpingBombManager {
     });
   }
 
-  private triggerExplosion(e: JumpingBombEntity, terrain: Terrain): void {
+  private triggerExplosion(e: JumpingBombEntity, terrain: Terrain, blocked: (c: number, r: number) => boolean): void {
     // Spawn explosion visual at current position
     e.explosions.push({
       tick: 0,
-      cells: buildCircle(e.tileX, e.tileY, rand(MIN_RADIUS, MAX_RADIUS), terrain),
+      cells: buildCircle(e.tileX, e.tileY, rand(MIN_RADIUS, MAX_RADIUS), terrain, blocked),
     });
     e.explosionsLeft--;
 
@@ -103,19 +105,19 @@ export class JumpingBombManager {
     }
 
     // Immediately jump to new position and start new fuse
-    const [nx, ny] = computeJump(e.tileX, e.tileY, terrain);
+    const [nx, ny] = computeJump(e.tileX, e.tileY, terrain, blocked);
     e.tileX = nx;
     e.tileY = ny;
     e.fuseTicks = rand(MIN_FUSE, MAX_FUSE);
     e.tick = 0;
   }
 
-  update(terrain: Terrain): void {
+  update(terrain: Terrain, blocked: (c: number, r: number) => boolean = () => false): void {
     for (const e of this.entities) {
       if (!e.done) {
         e.tick++;
         if (e.tick >= e.fuseTicks) {
-          this.triggerExplosion(e, terrain);
+          this.triggerExplosion(e, terrain, blocked);
         }
       }
       // Advance all explosion animations
@@ -153,14 +155,20 @@ export class JumpingBombManager {
     return Math.min(Math.floor(ex.tick / EXPLODE_TICKS_PER_FRAME), EXPLODE_FRAME_COUNT - 1);
   }
 
-  forceState(id: number, tileX: number, tileY: number, tick: number, fuseTicks: number, explosionsLeft: number): void {
-    const e = this.entities.find(e => e.id === id);
-    if (!e) return;
-    e.tileX = tileX;
-    e.tileY = tileY;
-    e.tick = tick;
-    e.fuseTicks = fuseTicks;
-    e.explosionsLeft = explosionsLeft;
+  applyNetState(entities: Array<{ id: number; tileX: number; tileY: number; tick: number; fuseTicks: number; explosionsLeft: number }>): void {
+    const seen = new Set<number>();
+    for (const p of entities) {
+      seen.add(p.id);
+      const e = this.entities.find(e => e.id === p.id);
+      if (e) {
+        e.tileX = p.tileX; e.tileY = p.tileY;
+        e.tick = p.tick; e.fuseTicks = p.fuseTicks; e.explosionsLeft = p.explosionsLeft;
+      } else {
+        this.entities.push({ id: p.id, tick: p.tick, fuseTicks: p.fuseTicks, tileX: p.tileX, tileY: p.tileY, explosionsLeft: p.explosionsLeft, done: false, explosions: [] });
+      }
+    }
+    // Remove active entities no longer present on the host
+    this.entities = this.entities.filter(e => e.done || seen.has(e.id));
   }
 
   getEntities(): JumpingBombEntity[] { return this.entities; }

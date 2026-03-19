@@ -2,8 +2,8 @@ import { PLAYER_SPEED } from "@minebombers/shared";
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const BOOST_TICKS       = 180; // 3 seconds at 60 fps
-const SPEED_MULTIPLIER  = 2;
+export const BOOST_TICKS       = 180; // 3 seconds at 60 fps
+export const SPEED_MULTIPLIER  = 2;
 
 // ── Manager ───────────────────────────────────────────────────────────────────
 
