@@ -74,6 +74,15 @@ export class Renderer {
 
   private _assets: Assets | null = null;
   private _terrain: Terrain | null = null;
+  private _door: DoorManager | null = null;
+  private _doorSwitch: DoorSwitchManager | null = null;
+
+  private skipFireCell(col: number, row: number): boolean {
+    if (this._terrain && isStone(this._terrain, col, row)) return true;
+    if (this._door?.hasAt(col, row)) return true;
+    if (this._doorSwitch?.hasSolidAt(col, row)) return true;
+    return false;
+  }
 
   render(
     assets: Assets,
@@ -119,6 +128,8 @@ export class Renderer {
     playerGold: number,
   ): void {
     this._terrain = terrain;
+    this._door = door;
+    this._doorSwitch = doorSwitch;
     const shake = nuclear.getShakeIntensity();
     if (shake > 0) {
       const MAX_SHAKE = 3;
@@ -487,11 +498,10 @@ export class Renderer {
     this.ctx.drawImage(sprite, x, y, TILE_SIZE, TILE_SIZE);
   }
 
-  private drawTntExplosion(assets: Assets, tnt: TntManager, e: TntEntity, door: DoorManager, doorSwitch: DoorSwitchManager): void {
+  private drawTntExplosion(assets: Assets, tnt: TntManager, e: TntEntity, _door: DoorManager, _doorSwitch: DoorSwitchManager): void {
     const frame = assets.tnt.explosion[tnt.explosionFrame(e)];
     for (const [col, row] of tnt.explosionCells(e)) {
-      if (this._terrain && isStone(this._terrain, col, row)) continue;
-      if (door.hasAt(col, row) || doorSwitch.hasSolidAt(col, row)) continue;
+      if (this.skipFireCell(col, row)) continue;
       const x = col * TILE_SIZE;
       const y = row * TILE_SIZE + HUD_HEIGHT;
       this.ctx.drawImage(frame, x, y, TILE_SIZE, TILE_SIZE);
@@ -505,6 +515,7 @@ export class Renderer {
       if (e.phase === "exploding") {
         const frame = crossAssets.explosion[mgr.explosionFrame(e)];
         for (const [col, row] of e.cells) {
+          if (this.skipFireCell(col, row)) continue;
           this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
         }
       } else if (e.phase === "fusing") {
@@ -519,14 +530,14 @@ export class Renderer {
   private drawBomb(
     bombAssets: { fuse: HTMLCanvasElement[]; disabled: HTMLCanvasElement; explosion: HTMLCanvasElement[] },
     mgr: BombManager,
-    door: DoorManager,
-    doorSwitch: DoorSwitchManager,
+    _door: DoorManager,
+    _doorSwitch: DoorSwitchManager,
   ): void {
     for (const e of mgr.getEntities()) {
       if (e.phase === "exploding") {
         const frame = bombAssets.explosion[mgr.explosionFrame(e)];
         for (const [col, row] of e.cells) {
-          if (door.hasAt(col, row) || doorSwitch.hasSolidAt(col, row)) continue;
+          if (this.skipFireCell(col, row)) continue;
           this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
         }
       } else if (e.phase === "fusing") {
@@ -547,6 +558,7 @@ export class Renderer {
       } else if (e.phase === "exploding") {
         const frame = assets.tnt.explosion[mgr.explosionFrame(e)];
         for (const [col, row] of e.cells) {
+          if (this.skipFireCell(col, row)) continue;
           this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
         }
       }
@@ -562,6 +574,7 @@ export class Renderer {
       } else if (e.phase === "exploding") {
         const frame = assets.tnt.explosion[mgr.explosionFrame(e)];
         for (const [col, row] of e.cells) {
+          if (this.skipFireCell(col, row)) continue;
           this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
         }
       }
@@ -580,6 +593,7 @@ export class Renderer {
       } else if (e.phase === "exploding") {
         const frame = assets.tnt.explosion[mgr.explosionFrame(e)];
         for (const [col, row] of e.cells) {
+          if (this.skipFireCell(col, row)) continue;
           this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
         }
       }
@@ -592,6 +606,7 @@ export class Renderer {
     for (const e of mgr.getEntities()) {
       const frame = assets.tnt.explosion[mgr.explosionFrame(e)];
       for (const [col, row] of e.cells) {
+        if (this.skipFireCell(col, row)) continue;
         this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
       }
     }
@@ -615,6 +630,7 @@ export class Renderer {
         }
       }
       for (const f of mgr.getFires()) {
+        if (this.skipFireCell(f.col, f.row)) continue;
         const frame = assets.flamebomb.explosion[mgr.fireFrame(f)];
         this.ctx.drawImage(frame, f.col * TILE_SIZE, f.row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
       }
@@ -631,6 +647,7 @@ export class Renderer {
       } else if (e.phase === "exploding") {
         const frame = bombAssets.explosion[mgr.explosionFrame(e)];
         for (const [col, row] of e.cells) {
+          if (this.skipFireCell(col, row)) continue;
           this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
         }
       }
@@ -643,6 +660,7 @@ export class Renderer {
     for (const e of mgr.getEntities()) {
       const frame = assets.tnt.explosion[mgr.smokeFrame(e)];
       for (const [col, row] of e.cells) {
+        if (this.skipFireCell(col, row)) continue;
         this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
       }
     }
@@ -683,6 +701,7 @@ export class Renderer {
       } else if (e.phase === "exploding") {
         const frame = assets.nuclear.explosion[mgr.explosionFrame(e)];
         for (const [col, row] of e.cells) {
+          if (this.skipFireCell(col, row)) continue;
           this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
         }
       }
@@ -717,10 +736,12 @@ export class Renderer {
       } else if (e.phase === "exploding") {
         const frame = assets.tnt.explosion[mgr.explosionFrame(e)];
         for (const [col, row] of e.centralCells) {
+          if (this.skipFireCell(col, row)) continue;
           this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
         }
         for (const s of e.secondaryBlasts) {
           for (const [col, row] of s.cells) {
+            if (this.skipFireCell(col, row)) continue;
             this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
           }
         }
@@ -737,6 +758,7 @@ export class Renderer {
       } else if (e.phase === "exploding") {
         const frame = assets.tnt.explosion[mgr.explosionFrame(e)];
         for (const [col, row] of e.cells) {
+          if (this.skipFireCell(col, row)) continue;
           this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
         }
       }
@@ -755,6 +777,7 @@ export class Renderer {
       for (const ex of e.explosions) {
         const frame = assets.tnt.explosion[mgr.explosionFrame(ex)];
         for (const [col, row] of ex.cells) {
+          if (this.skipFireCell(col, row)) continue;
           this.ctx.drawImage(frame, col * TILE_SIZE, row * TILE_SIZE + HUD_HEIGHT, TILE_SIZE, TILE_SIZE);
         }
       }
