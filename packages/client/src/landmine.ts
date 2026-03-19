@@ -47,18 +47,18 @@ export class LandmineManager {
     for (const e of this.entities) {
       e.tick++;
       if (e.phase === 'armed' && this.isAuthority) {
-        for (const p of players) {
+        const tx = e.tileX * TILE_SIZE, ty = e.tileY * TILE_SIZE;
+        const overlapping = players.filter(p => {
           const pl = p.x + MARGIN, pr = p.x + MARGIN + HB;
           const pt = p.y + MARGIN, pb = p.y + MARGIN + HB;
-          const tx = e.tileX * TILE_SIZE, ty = e.tileY * TILE_SIZE;
-          const overlaps = pl < tx + TILE_SIZE && pr > tx && pt < ty + TILE_SIZE && pb > ty;
-          if (e.grace) {
-            if (!overlaps) e.grace = false;
-          } else if (overlaps) {
-            this.triggerExplosion(e, terrain);
-            triggered.push({ tileX: e.tileX, tileY: e.tileY });
-            break;
-          }
+          return pl < tx + TILE_SIZE && pr > tx && pt < ty + TILE_SIZE && pb > ty;
+        });
+        if (e.grace) {
+          // Grace clears only when the placer has fully left the tile
+          if (overlapping.length === 0) e.grace = false;
+        } else if (overlapping.length > 0) {
+          this.triggerExplosion(e, terrain);
+          triggered.push({ tileX: e.tileX, tileY: e.tileY });
         }
       } else if (e.phase === 'exploding' && e.tick >= EXPLODE_TICKS_PER_FRAME * EXPLODE_FRAME_COUNT) {
         e.phase = 'done';

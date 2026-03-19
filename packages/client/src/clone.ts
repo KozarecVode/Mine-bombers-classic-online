@@ -116,7 +116,7 @@ export class CloneManager {
       if (e.throwCooldown > 0) e.throwCooldown--;
 
       // LOS check toward any monster or hostile player/clone
-      const losDir = this.checkMonsterLOS(e, terrain, monsterTiles, allPlayerTiles);
+      const losDir = this.checkMonsterLOS(e, terrain, monsterTiles, allPlayerTiles, solidAt);
 
       if (losDir) {
         e.shooting = true;
@@ -264,6 +264,7 @@ export class CloneManager {
     terrain: Terrain,
     monsterTiles: Set<string>,
     allPlayerTiles: Map<string, number>,
+    solidAt: (col: number, row: number) => boolean,
   ): Exclude<Dir, "none"> | null {
     const directions: [Exclude<Dir, "none">, number, number][] = [
       ["right", 1, 0],

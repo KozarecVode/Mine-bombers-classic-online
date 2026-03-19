@@ -9,6 +9,9 @@ export interface RemoteInput {
   gold: number;
   seq: number;
   stopPressed: boolean;
+  stopTileX?: number;
+  stopTileY?: number;
+  armorBonus?: number;
 }
 
 export class NetworkManager {
@@ -99,9 +102,10 @@ export class NetworkManager {
         break;
       case 'input':
         if (msg.fromPlayerId !== undefined) {
-          const seq = (msg as unknown as { seq?: number; stopPressed?: boolean }).seq ?? 0;
-          const stopPressed = (msg as unknown as { stopPressed?: boolean }).stopPressed ?? false;
-          const ri: RemoteInput = { dir: msg.dir, actions: msg.actions, digPower: msg.digPower ?? 1, gold: msg.gold ?? 0, seq, stopPressed };
+          const raw = msg as unknown as { seq?: number; stopPressed?: boolean; stopTileX?: number; stopTileY?: number };
+          const seq = raw.seq ?? 0;
+          const stopPressed = raw.stopPressed ?? false;
+          const ri: RemoteInput = { dir: msg.dir, actions: msg.actions, digPower: msg.digPower ?? 1, gold: msg.gold ?? 0, seq, stopPressed, stopTileX: raw.stopTileX, stopTileY: raw.stopTileY, armorBonus: (raw as any).armorBonus };
           // Also keep last-received for gold reads and fallback
           this.remoteInputs.set(msg.fromPlayerId, ri);
           this.lastRemoteInputSeq.set(msg.fromPlayerId, seq);
@@ -215,8 +219,8 @@ export class NetworkManager {
   }
 
   // CLIENT: send direction + weapon actions to host each frame
-  sendInput(dir: NetDir, actions: string[], digPower: number, gold: number, seq = 0, stopPressed = false): void {
-    this.send({ type: 'input', dir, actions, digPower, gold, seq, stopPressed } as unknown as NetMsg);
+  sendInput(dir: NetDir, actions: string[], digPower: number, gold: number, seq = 0, stopPressed = false, stopTileX?: number, stopTileY?: number, armorBonus?: number): void {
+    this.send({ type: 'input', dir, actions, digPower, gold, seq, stopPressed, stopTileX, stopTileY, armorBonus } as unknown as NetMsg);
   }
 
   // HOST: read latest input from a remote player (non-consuming, for gold/stats reads)

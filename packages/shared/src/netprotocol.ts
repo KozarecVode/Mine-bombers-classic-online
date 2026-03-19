@@ -111,7 +111,7 @@ export type NetMsg =
   // Any player → host (relayed by server, tagged with fromPlayerId)
   | { type: 'player_name'; name: string; fromPlayerId?: number }
   // Client → host (relayed by server, tagged with fromPlayerId)
-  | { type: 'input'; dir: NetDir; actions: string[]; digPower?: number; gold?: number; fromPlayerId?: number }
+  | { type: 'input'; dir: NetDir; actions: string[]; digPower?: number; gold?: number; fromPlayerId?: number; seq?: number; stopPressed?: boolean; stopTileX?: number; stopTileY?: number }
   // Host → all clients: items removed from world this tick
   | { type: 'item_remove'; pickable: number[]; treasure: number[] }
   // Host → all clients: game over, return to lobby (balances carries per-client new banked cash)

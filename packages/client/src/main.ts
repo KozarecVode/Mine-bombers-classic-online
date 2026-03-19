@@ -561,6 +561,7 @@ let playerGold = tournamentConfig.startingCash;
 let playerIsReady = false;
 const playerInventory = new Map<string, number>();
 let carryOverDigPower = 1; // dig power carried from previous round (1 = no carry-over / died)
+let playerArmorBonus = 0; // extra HP from armor bought this round
 let currentRound = 0;
 let roundsWon = 0;
 let roundTick = 0;
@@ -578,7 +579,6 @@ let pendingHostPlayerState: import("@minebombers/shared").NetPlayer | null = nul
 
 const DEBUG_RECONCILIATION = true;
 const inputSendTimes = new Map<number, number>(); // seq → Date.now() when sent
-let pingMs = 0;
 
 function getEffectivePrice(basePrice: number): number {
   return basePrice < 0 ? basePrice : Math.round(basePrice * priceMultiplier);
@@ -1255,24 +1255,19 @@ const WEAPONS = [
 type WeaponName = (typeof WEAPONS)[number];
 let selectedWeapon: WeaponName = "tnt";
 
-const RANDOM_WEAPON_POOL: WeaponName[] = [
-  "bigbomb",
-  "smallbomb",
-  "nuclear",
-  "tnt",
-  "bigcross",
-  "smallcross",
-  "flamethrower",
-  "grenade",
-  "landmine",
-  "barrel",
-  "bigdetonate",
-  "smalldetonate",
-  "plastic",
-  "urethane",
-  "teleport",
-  "lava",
-];
+const RANDOM_WEAPON_TIERS = {
+  rare:   { pool: ["nuclear", "grenade", "flamethrower", "clone"] as WeaponName[], minQty: 1, maxQty: 2 },
+  medium: { pool: ["flamebomb", "bigcross", "teleport", "lava", "fireextinguisher", "jumpingbomb", "jetpack"] as WeaponName[], minQty: 1, maxQty: 5 },
+  common: { pool: ["smallbomb", "bigbomb", "tnt", "smalldetonate", "bigdetonate", "landmine", "barrel", "smallcross", "plastic", "urethane", "diggerbomb", "wall"] as WeaponName[], minQty: 3, maxQty: 12 },
+} as const;
+
+function rollRandomWeapon(): { weapon: WeaponName; qty: number } {
+  const roll = Math.random();
+  const tier = roll < 0.2 ? RANDOM_WEAPON_TIERS.rare : roll < 0.4 ? RANDOM_WEAPON_TIERS.medium : RANDOM_WEAPON_TIERS.common;
+  const weapon = tier.pool[Math.floor(Math.random() * tier.pool.length)];
+  const qty = tier.minQty + Math.floor(Math.random() * (tier.maxQty - tier.minQty + 1));
+  return { weapon, qty };
+}
 
 // Items that cost gold in the shop and have inventory limits
 const SHOP_WEAPON_IDS = new Set<string>(SHOP_ITEMS.filter((i) => i.price >= 0 && i.id !== "__ready__").map((i) => i.id));
@@ -1433,15 +1428,22 @@ function startGame(): void {
   gameInventory.delete("dig_power_2");
   gameInventory.delete("dig_power_3");
 
+  const armorCount = gameInventory.get("armor") ?? 0;
+  gameInventory.delete("armor");
+  playerInventory.delete("armor"); // armor is per-round only, doesn't carry over
+  playerArmorBonus = armorCount * 100;
+  player.armorBonus = playerArmorBonus;
+
   // Reset all players to alive with full HP for the new round
   player.dead = false;
-  player.health = MAX_HEALTH;
+  player.health = MAX_HEALTH + playerArmorBonus;
   player.cash = 0;
   player.moving = false;
   player.digging = false;
   player.pendingStop = false;
   for (const rp of remotePlayers.values()) {
     rp.dead = false;
+    rp.armorBonus = 0;
     rp.health = MAX_HEALTH;
     rp.cash = 0;
     rp.moving = false;
@@ -1936,9 +1938,10 @@ netMgr.onPlayerLeave = (pid) => {
 };
 
 netMgr.onHostLeft = () => {
-  netMgr.disconnect();
-  openMainMenu();
   addChatMessage("System", "Host left — tournament ended.");
+  gameEl.style.display = "none";
+  shopEl.style.display = "none";
+  openTournamentOverScreen();
 };
 
 netMgr.onGameInProgress = () => {
@@ -2125,6 +2128,21 @@ netMgr.onTerrainChange = (changes) => {
     };
   }
   renderer.markTerrainDirty();
+  // Client-side dig completion: if player was digging toward a tile that just cleared,
+  // start the slide immediately rather than waiting for the next reconciliation snapshot.
+  // Without this, the snapshot arrives with moving=true/targetTile=N+1 while the client
+  // is still stationary, triggering a tile mismatch reconciliation and a visible jump.
+  if (!netMgr.isHost && player.digging && !player.moving) {
+    const dc = player.dir === "right" ? 1 : player.dir === "left" ? -1 : 0;
+    const dr = player.dir === "down" ? 1 : player.dir === "up" ? -1 : 0;
+    const nc = player.tileX + dc, nr = player.tileY + dr;
+    if (!isStone(terrain, nc, nr) && !lavaMgr.hasSolidAt(nc, nr) && !urethaneMgr.hasSolidAt(nc, nr) && !plasticMgr.hasSolidAt(nc, nr)) {
+      player.digging = false;
+      player.targetTileX = nc;
+      player.targetTileY = nr;
+      player.moving = true;
+    }
+  }
 };
 
 netMgr.onItemRemove = (pickable, treasure) => {
@@ -2167,7 +2185,7 @@ netMgr.onWeaponAct = (weapon, x, y, tileX, tileY, dir, moving, actorColor, owner
     else if (weapon === "bigbomb") bigBombMgr.enableSelfAuthorityAt(tileX, tileY);
     return;
   }
-  applyRemoteWeapon({ x, y, tileX, tileY, dir: dir as Dir, moving }, weapon, actorColor, actorColor);
+  applyRemoteWeapon({ x, y, tileX, tileY, dir: dir as Dir, moving }, weapon, ownerId, actorColor);
 };
 
 // ── Create game screen logic ───────────────────────────────────────────────────
@@ -2312,8 +2330,6 @@ function loop(ts: number): void {
   pickableMgr.lastRemovedIds = [];
   treasureMgr.lastRemovedIds = [];
 
-  const tileX = player.tileX * TILE_SIZE;
-  const tileY = player.tileY * TILE_SIZE;
   const facingDir = player.dir; // capture before updatePlayer can change it
 
   // Dead players can't do anything
@@ -2356,7 +2372,8 @@ function loop(ts: number): void {
 
   if (!netMgr.connected || netMgr.isHost) {
     // HOST / OFFLINE: apply input directly
-    updatePlayer(player, inputDir as Dir, stopPressed, terrain, weaponMgrs, playerMoveSpeed, pushBlocker);
+    if (!player.dead)
+      updatePlayer(player, inputDir as Dir, stopPressed, terrain, weaponMgrs, playerMoveSpeed, pushBlocker);
   } else {
     // CLIENT: reconcile against server snapshot, then re-predict
     if (pendingHostPlayerState) {
@@ -2401,20 +2418,38 @@ function loop(ts: number): void {
       if (DEBUG_RECONCILIATION) {
         const sent = inputSendTimes.get(acked);
         if (sent !== undefined) {
-          pingMs = Date.now() - sent;
           for (const k of inputSendTimes.keys()) if (k <= acked) inputSendTimes.delete(k);
         }
       }
     }
     // Apply this frame's input as a new prediction step
-    updatePlayer(player, inputDir as Dir, stopPressed, terrain, weaponMgrs, playerMoveSpeed, pushBlocker);
+    if (!player.dead)
+      updatePlayer(player, inputDir as Dir, stopPressed, terrain, weaponMgrs, playerMoveSpeed, pushBlocker);
   }
+
+  // Capture tile coords after movement/reconciliation so weapon placement uses the correct tile
+  const tileX = player.tileX * TILE_SIZE;
+  const tileY = player.tileY * TILE_SIZE;
+
+  // Per-tile dig accumulator: collects dig power from all players + clones digging the same tile,
+  // applied as a single combined call so two players digging together break tiles faster.
+  const digAcc = new Map<string, { col: number; row: number; digPower: number }>();
+  const accumulateDig = (col: number, row: number, digPower: number) => {
+    const key = `${col},${row}`;
+    const e = digAcc.get(key);
+    if (e) e.digPower += digPower; else digAcc.set(key, { col, row, digPower });
+  };
 
   // HOST: update remote players with their received inputs
   if (netMgr.connected && netMgr.isHost) {
     for (const [pid, rp] of remotePlayers) {
       const ri = netMgr.dequeueRemoteInput(pid);
       rp.digPower = ri.digPower;
+      if (ri.armorBonus !== undefined && ri.armorBonus !== rp.armorBonus) {
+        const wasAtBase = rp.health === MAX_HEALTH; // still at round-start baseline
+        rp.armorBonus = ri.armorBonus;
+        if (wasAtBase) rp.health = MAX_HEALTH + rp.armorBonus;
+      }
       if (!rp.dead) {
         const rdir = ri.dir as Dir;
         // Set digging flag (same logic as local player)
@@ -2437,7 +2472,15 @@ function loop(ts: number): void {
           : rpJetpack
             ? PLAYER_SPEED * JETPACK_SPEED_MULTIPLIER
             : PLAYER_SPEED;
-        updatePlayer(rp, rdir, ri.stopPressed, terrain, weaponMgrs, rpMoveSpeed, pushBlocker);
+        // If client sent explicit stop tile, snap directly to it — avoids stop-position disagreement
+        if (ri.stopPressed && ri.stopTileX !== undefined && ri.stopTileY !== undefined) {
+          rp.tileX = ri.stopTileX; rp.targetTileX = ri.stopTileX;
+          rp.tileY = ri.stopTileY; rp.targetTileY = ri.stopTileY;
+          rp.x = ri.stopTileX * TILE_SIZE; rp.y = ri.stopTileY * TILE_SIZE;
+          rp.moving = false; rp.pendingStop = false;
+        } else {
+          updatePlayer(rp, rdir, ri.stopPressed, terrain, weaponMgrs, rpMoveSpeed, pushBlocker);
+        }
         if (rp.tileX !== prevRpTileX || rp.tileY !== prevRpTileY) {
           const rpDest = teleportMgr.tryTeleport(rp.tileX, rp.tileY);
           if (rpDest) {
@@ -2458,13 +2501,7 @@ function loop(ts: number): void {
           const rnc = rp.tileX + rdc,
             rnr = rp.tileY + rdr2;
           const rpEffectiveDigPower = rpJetpack ? 300 : rp.digPower;
-          if (isStone(terrain, rnc, rnr)) {
-            if (applyDigDamage(detailMap, terrain, rnc, rnr, rpEffectiveDigPower)) renderer.markTerrainDirty();
-          } else {
-            lavaMgr.applyDigDamage(rnc, rnr, rpEffectiveDigPower);
-            urethaneMgr.applyDigDamage(rnc, rnr, rpEffectiveDigPower);
-            plasticMgr.applyDigDamage(rnc, rnr, rpEffectiveDigPower);
-          }
+          accumulateDig(rnc, rnr, rpEffectiveDigPower);
         }
         for (const action of ri.actions) applyRemoteWeapon(rp, action, pid, rp.color);
         // Remote player pickups (host is authoritative)
@@ -2477,8 +2514,8 @@ function loop(ts: number): void {
           else if (type === "dig_power_3") rp.digPower += 5;
           else if (type === "medpac") rp.health = MAX_HEALTH;
           else if (type === "random_weapon") {
-            const w = RANDOM_WEAPON_POOL[Math.floor(Math.random() * RANDOM_WEAPON_POOL.length)];
-            netMgr.sendWeaponAct(`pickup_weapon:${w}`, 0, 0, 0, 0, "none", false, 0, pid);
+            const { weapon: w, qty } = rollRandomWeapon();
+            for (let i = 0; i < qty; i++) netMgr.sendWeaponAct(`pickup_weapon:${w}`, 0, 0, 0, 0, "none", false, 0, pid);
           }
         }
       }
@@ -2528,19 +2565,11 @@ function loop(ts: number): void {
   for (const rp of remotePlayers.values()) {
     checkDigSound(rp.digging, rp.dir, rp.tileX, rp.tileY);
   }
-  // Apply dig damage — only on host (clients receive terrain changes via onTerrainChange)
+  // Accumulate local player dig power (host/offline only)
   if (player.digging && (!netMgr.connected || netMgr.isHost)) {
     const dc = inputDir === "right" ? 1 : inputDir === "left" ? -1 : 0;
     const dr = inputDir === "down" ? 1 : inputDir === "up" ? -1 : 0;
-    const nc = player.tileX + dc,
-      nr = player.tileY + dr;
-    if (isStone(terrain, nc, nr)) {
-      if (applyDigDamage(detailMap, terrain, nc, nr, jetpackMgr.getDigPower(player.digPower))) renderer.markTerrainDirty();
-    } else {
-      lavaMgr.applyDigDamage(nc, nr, jetpackMgr.getDigPower(player.digPower));
-      urethaneMgr.applyDigDamage(nc, nr, jetpackMgr.getDigPower(player.digPower));
-      plasticMgr.applyDigDamage(nc, nr, jetpackMgr.getDigPower(player.digPower));
-    }
+    accumulateDig(player.tileX + dc, player.tileY + dr, jetpackMgr.getDigPower(player.digPower));
   }
 
   // Only try teleport when the player steps onto a new tile (entry detection)
@@ -2584,7 +2613,10 @@ function loop(ts: number): void {
     inputSeq++;
     inputBuffer.push({ seq: inputSeq, dir: inputDir as Dir, stopPressed });
     if (inputBuffer.length > 128) inputBuffer.shift();
-    netMgr.sendInput(inputDir as NetDir, netActions, player.digPower, playerGold, inputSeq, stopPressed);
+    // When stopping, include the tile the client snapped to so the host uses the exact same position
+    const stopTileX = stopPressed ? (player.moving ? player.targetTileX : player.tileX) : undefined;
+    const stopTileY = stopPressed ? (player.moving ? player.targetTileY : player.tileY) : undefined;
+    netMgr.sendInput(inputDir as NetDir, netActions, player.digPower, playerGold, inputSeq, stopPressed, stopTileX, stopTileY, playerArmorBonus);
     inputSendTimes.set(inputSeq, Date.now());
     // Mirror weapon placement locally so bombs/explosions are visible on client
     if (!player.dead && netActions.some((a) => a === selectedWeapon || a.startsWith(selectedWeapon + "@"))) {
@@ -2762,7 +2794,7 @@ function loop(ts: number): void {
       treasureMgr,
       monsterSolid,
     ],
-    (c, r) => allPlayerTiles.has(`${c},${r}`),
+    (c, r) => allPlayerTiles.has(`${c},${r}`) || cloneMgr.getEntities().some(e => e.phase === "alive" && e.tileX === c && e.tileY === r),
   );
   smallBombMgr.update(player.x, player.y, terrain);
   bigBombMgr.update(player.x, player.y, terrain);
@@ -2837,7 +2869,7 @@ function loop(ts: number): void {
     greyMgr.getEntities().some((g) => g.phase === "alive" && g.tileX === c && g.tileY === r) ||
     cloneMgr.getEntities().some((e) => e.phase === "alive" && e.tileX === c && e.tileY === r);
   const monsterApplyDig = (col: number, row: number, digPower: number): void => {
-    if (applyDigDamage(detailMap, terrain, col, row, digPower)) renderer.markTerrainDirty();
+    accumulateDig(col, row, digPower);
   };
   if (!netMgr.connected || netMgr.isHost) {
     const allPlayerPositions = [
@@ -2927,6 +2959,18 @@ function loop(ts: number): void {
       }
     }
   }
+  // Apply combined dig damage — all players + clones + monsters targeting the same tile
+  // are merged so co-diggers break terrain faster proportional to total dig power.
+  for (const { col, row, digPower } of digAcc.values()) {
+    if (isStone(terrain, col, row)) {
+      if (applyDigDamage(detailMap, terrain, col, row, digPower)) renderer.markTerrainDirty();
+    } else {
+      lavaMgr.applyDigDamage(col, row, digPower);
+      urethaneMgr.applyDigDamage(col, row, digPower);
+      plasticMgr.applyDigDamage(col, row, digPower);
+    }
+  }
+
   for (const t of landmineMgr.chainDetonate(monsterTiles, terrain)) {
     if (netMgr.connected && netMgr.isHost) netMgr.sendWeaponAct("landmine_trigger", 0, 0, t.tileX, t.tileY, "none", false, 0);
   }
@@ -2951,8 +2995,8 @@ function loop(ts: number): void {
       else if (type === "dig_power_3") player.digPower += 5;
       else if (type === "medpac") player.health = MAX_HEALTH;
       else if (type === "random_weapon") {
-        const w = RANDOM_WEAPON_POOL[Math.floor(Math.random() * RANDOM_WEAPON_POOL.length)];
-        gameInventory.set(w, (gameInventory.get(w) ?? 0) + 1);
+        const { weapon: w, qty } = rollRandomWeapon();
+        gameInventory.set(w, (gameInventory.get(w) ?? 0) + qty);
         selectedWeapon = w;
       }
     }
@@ -3009,7 +3053,7 @@ function loop(ts: number): void {
   // ── Sound: explosion triggers ─────────────────────────────────────────────
   {
     const hasNew = (fire: Set<string>) => fire.size > 0 && [...fire].some((k) => newNormalCells.has(k));
-    if (hasNew(smallBombFire) || hasNew(bigBombFire) || hasNew(landmineFire)) playSound("PIKKUPOM", 80, 0.2);
+    if (hasNew(smallBombFire) || hasNew(bigBombFire) || hasNew(landmineFire) || hasNew(grenadeFire)) playSound("PIKKUPOM", 80, 0.2);
     if (hasNew(smallCrossFire) || hasNew(smallDetFire) || hasNew(plasticFire) || hasNew(flameBarrelFire)) playSound("EXPLOS1", 80, 0.03);
     if (hasNew(tntFire) || hasNew(bigDetFire) || hasNew(bigCrossFire) || hasNew(teleportMgr.getFireCells()) || hasNew(jumpingBombFire))
       playSound("EXPLOS2", 80, 0.03);
@@ -3020,7 +3064,20 @@ function loop(ts: number): void {
   }
   // Explosion terrain damage — only on host/offline (clients receive changes via onTerrainChange)
   if (!netMgr.connected || netMgr.isHost) {
+    // Count how many distinct sources cover each cell — cells hit by 2+ sources get double-degraded.
+    // This handles chain-detonated duds: a dud's explosion on top of another explosion combines for full double damage.
+    const fireSourceSets: Set<string>[] = [
+      tntFire, bigCrossFire, smallCrossFire, grenadeFire, smallBombFire, bigBombFire,
+      landmineFire, flameBombFire, smallDetFire, bigDetFire, plasticFire, nuclearFire,
+      jumpingBombFire, flameBarrelFire, diggerBombFire,
+    ];
+    const fireCounts = new Map<string, number>();
+    for (const src of fireSourceSets) for (const k of src) fireCounts.set(k, (fireCounts.get(k) ?? 0) + 1);
+    const doubleHitCells = new Set<string>([...newNormalCells].filter(k => (fireCounts.get(k) ?? 0) >= 2));
+
     if (applyExplosionToTerrain(newNormalCells, allFire, terrain, detailMap)) renderer.markTerrainDirty();
+    // Second pass: cells hit by multiple sources get degraded one extra step
+    if (doubleHitCells.size > 0 && applyExplosionToTerrain(doubleHitCells, allFire, terrain, detailMap)) renderer.markTerrainDirty();
     if (applyExplosionToTerrain(newNuclearCells, allFire, terrain, detailMap, true)) renderer.markTerrainDirty();
     // Boulders hit by explosion fire become rock_destroyed_2 — must run AFTER applyExplosionToTerrain
     // so the freshly-placed rock_destroyed_2 tile isn't immediately re-degraded to ground.
@@ -3231,9 +3288,6 @@ function loop(ts: number): void {
     playerGold + player.cash, // HUD: banked cash + round gold
   );
 
-  if (DEBUG_RECONCILIATION) {
-    renderer.drawNetDebug(pingMs);
-  }
 
   // HOST: send terrain+detail diffs immediately, then periodic state snapshot
   if (netMgr.connected && netMgr.isHost && prevTerrain && prevDetailType && prevBurnedGround) {

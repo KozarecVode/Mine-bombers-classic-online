@@ -115,9 +115,12 @@ ipcMain.on("quit", () => {
 });
 
 function createWindow(): void {
+  const iconPath = path.join(__dirname, "../app/art/icon.ico");
   const win = new BrowserWindow({
     width: 1280,
     height: 800,
+    title: "Minebombers",
+    icon: iconPath,
     autoHideMenuBar: true,
     webPreferences: {
       nodeIntegration: false,

@@ -29,6 +29,7 @@ export interface LocalPlayer {
   health: number;
   digPower: number;
   dead: boolean;
+  armorBonus: number;
 }
 
 const ANIM_TICKS = 5;
@@ -53,6 +54,7 @@ export function createLocalPlayer(name: string, color: number, startTileX = 2, s
     health: MAX_HEALTH,
     digPower: 1,
     dead: false,
+    armorBonus: 0,
   };
 }
 

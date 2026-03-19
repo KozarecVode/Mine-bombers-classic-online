@@ -113,7 +113,7 @@ export class GrenadierManager {
       // Check LOS against all players, shoot at first visible one
       let losDir: Dir | null = null;
       for (const p of allPlayers) {
-        losDir = this.checkLOS(e, terrain, p.tileX, p.tileY);
+        losDir = this.checkLOS(e, terrain, solidAt, p.tileX, p.tileY);
         if (losDir) break;
       }
 
@@ -181,7 +181,7 @@ export class GrenadierManager {
 
   // ── LOS ──────────────────────────────────────────────────────────────────────
 
-  private checkLOS(e: GrenadierEntity, terrain: Terrain, ptx: number, pty: number): Dir | null {
+  private checkLOS(e: GrenadierEntity, terrain: Terrain, solidAt: (c: number, r: number) => boolean, ptx: number, pty: number): Dir | null {
     const ec = e.tileX,
       er = e.tileY;
 

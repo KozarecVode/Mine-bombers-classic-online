@@ -12,6 +12,7 @@ export interface UrethaneEntity {
   centerX: number;          // tile where urethane_1 is shown
   centerY: number;
   cells: [number, number][]; // full diamond — revealed only when burning
+  isStatic?: boolean;
 }
 
 export interface UrethaneFire {
@@ -54,26 +55,30 @@ export class UrethaneManager {
     const tileX = Math.round(playerX / TILE_SIZE);
     const tileY = Math.round(playerY / TILE_SIZE);
     const rows = terrain.length, cols = terrain[0].length;
-    const MAX_HALF = 5;
 
-    // BFS flood-fill: terrain tiles stop expansion entirely (not just skip)
-    const cells: [number, number][] = [];
-    const visited = new Set<string>();
-    visited.add(`${tileX},${tileY}`);
-    const queue: [number, number][] = [[tileX, tileY]];
-
-    while (queue.length > 0) {
-      const [c, r] = queue.shift()!;
-      if (c <= 0 || c >= cols - 1 || r <= 0 || r >= rows - 1) continue;
-      if (isStone(terrain, c, r)) continue;
-      if (blocked?.(c, r)) continue;
-      cells.push([c, r]);
-      if (Math.abs(c - tileX) + Math.abs(r - tileY) >= MAX_HALF) continue;
-      for (const [dc, dr] of [[-1,0],[1,0],[0,-1],[0,1]] as const) {
-        const key = `${c+dc},${r+dr}`;
-        if (!visited.has(key)) { visited.add(key); queue.push([c+dc, r+dr]); }
+    const bfs = (maxHalf: number): [number, number][] => {
+      const cells: [number, number][] = [];
+      const visited = new Set<string>();
+      visited.add(`${tileX},${tileY}`);
+      const queue: [number, number][] = [[tileX, tileY]];
+      while (queue.length > 0) {
+        const [c, r] = queue.shift()!;
+        if (c <= 0 || c >= cols - 1 || r <= 0 || r >= rows - 1) continue;
+        if (isStone(terrain, c, r)) continue;
+        if (blocked?.(c, r)) continue;
+        cells.push([c, r]);
+        if (Math.abs(c - tileX) + Math.abs(r - tileY) >= maxHalf) continue;
+        for (const [dc, dr] of [[-1,0],[1,0],[0,-1],[0,1]] as const) {
+          const key = `${c+dc},${r+dr}`;
+          if (!visited.has(key)) { visited.add(key); queue.push([c+dc, r+dr]); }
+        }
       }
-    }
+      return cells;
+    };
+
+    // In open space radius-5 gives ~61 tiles; if walls constrain it to <30, treat as enclosed and expand further
+    const smallCells = bfs(5);
+    const cells = smallCells.length < 30 ? bfs(15) : smallCells;
 
     this.entities.push({ id: this.nextId++, phase: "placed", tick: 0, centerX: tileX, centerY: tileY, cells });
   }
@@ -228,17 +233,27 @@ export class UrethaneManager {
     return Math.min(Math.floor(f.tick / FIRE_TICKS_PER_FRAME), FIRE_FRAME_COUNT - 1);
   }
 
-  getNetState(): Array<{ id: number; phase: string; cells: [number, number][] }> {
-    return this.entities.map(e => ({ id: e.id, phase: e.phase, cells: e.cells.slice() as [number, number][] }));
+  getNetState(): Array<{ id: number; phase: string; centerX: number; centerY: number; cells: [number, number][] }> {
+    return this.entities.map(e => ({ id: e.id, phase: e.phase, centerX: e.centerX, centerY: e.centerY, cells: e.cells.slice() as [number, number][] }));
   }
 
-  applyNetState(data: Array<{ id: number; phase: string; cells: [number, number][] }>): void {
+  applyNetState(data: Array<{ id: number; phase: string; centerX?: number; centerY?: number; cells: [number, number][] }>): void {
     const byId = new Map(this.entities.map(e => [e.id, e]));
     for (const d of data) {
       const e = byId.get(d.id);
       if (e) {
         e.phase = d.phase as UrethanePhase;
         e.cells = d.cells.slice() as [number, number][];
+      } else {
+        // Create entity missing on client (host authoritative)
+        this.entities.push({
+          id: d.id,
+          phase: d.phase as UrethanePhase,
+          tick: 0,
+          centerX: d.centerX ?? (d.cells[0]?.[0] ?? 0),
+          centerY: d.centerY ?? (d.cells[0]?.[1] ?? 0),
+          cells: d.cells.slice() as [number, number][],
+        });
       }
     }
     // Remove entities not in the host state

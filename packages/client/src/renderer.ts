@@ -198,16 +198,6 @@ export class Renderer {
     this.drawTimerBar(roundTick, timeLimitTicks);
   }
 
-  // ── Reconciliation debug overlay ───────────────────────────────────────────
-
-  drawNetDebug(pingMs: number): void {
-    const ctx = this.ctx;
-    ctx.save();
-    ctx.font = "8px monospace";
-    ctx.fillStyle = "white";
-    ctx.fillText(`ping ${pingMs}ms`, 2, 10);
-    ctx.restore();
-  }
 
   // ── Timer bar ──────────────────────────────────────────────────────────────
 
@@ -284,7 +274,7 @@ export class Renderer {
     const barW = 8;
     const barH = panelH - 4;
     const barY = panelY + 2;
-    const hpFrac = Math.max(0, p.health / MAX_HEALTH);
+    const hpFrac = Math.max(0, p.health / (MAX_HEALTH + p.armorBonus));
     const fillH = Math.round(barH * hpFrac);
     ctx.fillStyle = "#111111";
     ctx.fillRect(barX, barY, barW, barH);
@@ -297,7 +287,10 @@ export class Renderer {
     const iconName = Renderer.WEAPON_ICON[selectedWeapon] ?? "small_bomb";
     const iconImg = assets.shopIcons[iconName] ?? assets.shopIcons["small_bomb"];
     if (iconImg) {
-      ctx.drawImage(iconImg, panelX + 4, panelY + 1, 28, 28);
+      const iconSize = 30;
+      const iconSlotCx = panelX + 4 + 14; // centre of the 28px slot
+      const iconSlotCy = panelY + 1 + 14;
+      ctx.drawImage(iconImg, iconSlotCx - iconSize / 2, iconSlotCy - iconSize / 2, iconSize, iconSize);
       // Count badge — top-left corner of the icon (always shown)
       const countStr = String(weaponCount);
       ctx.font = "bold 7px monospace";

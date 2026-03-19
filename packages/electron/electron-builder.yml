@@ -1,5 +1,6 @@
 appId: com.minebombers.game
-productName: MineBombers
+productName: Minebombers
+icon: app/art/icon.ico
 
 directories:
   output: ../../dist-electron

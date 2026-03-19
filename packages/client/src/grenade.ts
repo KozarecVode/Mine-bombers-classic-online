@@ -18,7 +18,7 @@ export interface GrenadeEntity {
 
 // ── Constants ─────────────────────────────────────────────────────────────────
 
-const TILES_PER_TICK = 1.5;
+const TILES_PER_TICK = 1;
 const EXPLODE_FRAME_COUNT = 11;
 const EXPLODE_TICKS_PER_FRAME = 1;
 const CHAIN_FRAME_CUTOFF = 6;
