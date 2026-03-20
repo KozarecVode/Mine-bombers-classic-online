@@ -273,7 +273,7 @@ function refreshRandomMap(): void {
   const allKeys = [null, ...levelData.keys()];
   const picked = allKeys[Math.floor(Math.random() * allKeys.length)];
   if (picked && levelData.has(picked)) {
-    cachedRandomLevel = null;
+    cachedRandomLevel = parseMneLevel(levelData.get(picked)!);
     updateShopMapThumb(buildThumbnail(levelData.get(picked)!));
   } else {
     cachedRandomLevel = generateRandomLevel(tournamentConfig.treasures);
