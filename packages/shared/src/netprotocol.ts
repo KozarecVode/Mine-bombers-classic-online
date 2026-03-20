@@ -103,7 +103,7 @@ export type NetMsg =
   | { type: 'game_in_progress' }
   // Host → all clients (relayed by server)
   | ({ type: 'init' } & LevelInitData)
-  | { type: 'state'; tick: number; roundTick: number; players: NetPlayer[]; monsters: NetMonster[]; pushables: NetPushable[]; clones?: NetClone[]; doorSwitchOn?: boolean; doorOpen?: boolean; lava?: Array<{ id: number; cells: [number, number][] }>; urethane?: Array<{ id: number; phase: string; cells: [number, number][] }>; plastic?: Array<{ id: number; phase: string; armedCells: [number, number][]; explosionCells: [number, number][] }> }
+  | { type: 'state'; tick: number; roundTick: number; players: NetPlayer[]; monsters: NetMonster[]; pushables: NetPushable[]; clones?: NetClone[]; doorSwitchOn?: boolean; doorOpen?: boolean; lava?: Array<{ id: number; cells: [number, number][] }>; urethane?: Array<{ id: number; phase: string; cells: [number, number][] }>; plastic?: Array<{ id: number; phase: string; centerX: number; centerY: number; armedCells: [number, number][]; explosionCells: [number, number][] }> }
   // Host → all clients: tournament finished, full standings
   | { type: 'tournament_over'; slots: Array<{ name: string; color: number; totalCash: number; roundsWon: number; active: boolean }> }
   | { type: 'terrain'; changes: TerrainChange[] }

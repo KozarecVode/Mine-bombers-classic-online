@@ -50,7 +50,7 @@ function buildCircle(cx: number, cy: number, radius: number, terrain: Terrain, b
       const col = cx + dx, row = cy + dy;
       if (row < 0 || row >= rows || col < 0 || col >= cols) continue;
       if (row === 0 || row === rows - 1 || col === 0 || col === cols - 1) continue;
-      if (isStone(terrain, col, row) || blocked(col, row)) continue;
+      if (blocked(col, row)) continue;
       result.push([col, row]);
     }
   }

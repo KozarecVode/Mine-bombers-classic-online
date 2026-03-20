@@ -168,18 +168,36 @@ export class PlasticManager {
     return Math.min(Math.floor(e.tick / EXPLODE_TICKS_PER_FRAME), EXPLODE_FRAME_COUNT - 1);
   }
 
-  getNetState(): Array<{ id: number; phase: string; armedCells: [number, number][]; explosionCells: [number, number][] }> {
-    return this.entities.map(e => ({ id: e.id, phase: e.phase, armedCells: e.armedCells.slice() as [number, number][], explosionCells: e.explosionCells.slice() as [number, number][] }));
+  getNetState(): Array<{ id: number; phase: string; centerX: number; centerY: number; armedCells: [number, number][]; explosionCells: [number, number][] }> {
+    return this.entities.map(e => ({ id: e.id, phase: e.phase, centerX: e.centerX, centerY: e.centerY, armedCells: e.armedCells.slice() as [number, number][], explosionCells: e.explosionCells.slice() as [number, number][] }));
   }
 
-  applyNetState(data: Array<{ id: number; phase: string; armedCells: [number, number][]; explosionCells: [number, number][] }>): void {
+  applyNetState(data: Array<{ id: number; phase: string; centerX: number; centerY: number; armedCells: [number, number][]; explosionCells: [number, number][] }>): void {
     const byId = new Map(this.entities.map(e => [e.id, e]));
     for (const d of data) {
-      const e = byId.get(d.id);
+      let e = byId.get(d.id);
+      if (!e) {
+        // ID mismatch (client prediction) — match by center position and adopt host ID
+        e = this.entities.find(en => en.centerX === d.centerX && en.centerY === d.centerY);
+        if (e) { byId.delete(e.id); e.id = d.id; byId.set(d.id, e); }
+      }
       if (e) {
         e.phase = d.phase as PlasticPhase;
         e.armedCells = d.armedCells.slice() as [number, number][];
         e.explosionCells = d.explosionCells.slice() as [number, number][];
+      } else {
+        // Entity doesn't exist locally (e.g. placed by another player) — create it
+        const newEntity: PlasticEntity = {
+          id: d.id,
+          phase: d.phase as PlasticPhase,
+          tick: 0,
+          centerX: d.centerX,
+          centerY: d.centerY,
+          armedCells: d.armedCells.slice() as [number, number][],
+          explosionCells: d.explosionCells.slice() as [number, number][],
+        };
+        this.entities.push(newEntity);
+        byId.set(d.id, newEntity);
       }
     }
     const hostIds = new Set(data.map(d => d.id));

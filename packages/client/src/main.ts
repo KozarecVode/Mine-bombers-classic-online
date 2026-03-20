@@ -233,16 +233,12 @@ function openTournamentOverScreen(): void {
     netMgr.disconnect();
   }
 
-  // Determine per-player result: win = 1st place, draw = 2nd place, lose = rest
+  // Determine per-player result using bested_by count:
+  // Win  = nobody has a higher score (bested_by == 0)
+  // Lose = everyone else has a higher score (bested_by == active.length - 1)
+  // Draw = somewhere in between
   const active = tournamentSlots.filter((s) => s.active);
   const score = (s: TournamentStat) => (tournamentConfig.winCondition === "wins" ? s.roundsWon : s.totalCash);
-  const sortedScores = [...new Set(active.map(score))].sort((a, b) => b - a);
-  const firstScore = sortedScores[0] ?? 0;
-  const secondScore = sortedScores[1] ?? null;
-  const soloWinner = active.filter((s) => score(s) === firstScore).length === 1;
-  // draw tier: tied-for-first (when not solo) OR second place
-  const drawScore = soloWinner ? secondScore : firstScore;
-  const winScore = soloWinner ? firstScore : null; // no winner if tied at top
 
   for (let i = 0; i < 4; i++) {
     const s = tournamentSlots[i];
@@ -256,7 +252,8 @@ function openTournamentOverScreen(): void {
     } else {
       toCards[i].style.display = "";
       const sc = score(s);
-      const result = sc === winScore ? "win" : sc === drawScore ? "draw" : "lose";
+      const bestedBy = active.filter((o) => score(o) > sc).length;
+      const result = bestedBy === 0 ? "win" : bestedBy === active.length - 1 ? "lose" : "draw";
       toCards[i].src = `/art/ui/tournament_over/player_${slot}_${result}.png`;
       toNames[i].textContent = s.name || `Player ${slot}`;
       toCash[i].textContent = `$${s.totalCash}`;
@@ -744,8 +741,7 @@ function startGameFromLobby(): void {
   player.name = shopNameInput.value.trim() || "Player";
   setSlotActive(player.color, player.name);
 
-  const resolvedLevel =
-    selectedLevel === "__random__" ? [null, ...levelData.keys()][Math.floor(Math.random() * (levelData.size + 1))] : selectedLevel;
+  const resolvedLevel = selectedLevel === "__random__" ? null : selectedLevel;
   const isLoadedMap = !!(resolvedLevel && levelData.has(resolvedLevel));
   const parsed = isLoadedMap
     ? parseMneLevel(levelData.get(resolvedLevel!)!)
@@ -1023,9 +1019,9 @@ function applyRemoteWeapon(
   else if (action === "smalldetonate") smallDetMgr.place(rp.x, rp.y, terrain, actorColor);
   else if (action === "bigdetonate") bigDetMgr.place(rp.x, rp.y, terrain, actorColor);
   else if (action === "urethane") {
-    if (!lavaMgr.hasSolidAt(rp.tileX, rp.tileY)) urethaneMgr.place(rp.x, rp.y, terrain, (c, r) => plasticMgr.hasCellAt(c, r));
+    if (!lavaMgr.hasSolidAt(rp.tileX, rp.tileY)) urethaneMgr.place(rp.x, rp.y, terrain, (c, r) => plasticMgr.hasCellAt(c, r) || doorMgr.hasSolidAt(c, r) || doorSwitchMgr.hasSolidAt(c, r));
   } else if (action === "plastic") {
-    if (!lavaMgr.hasSolidAt(rp.tileX, rp.tileY)) plasticMgr.place(rp.x, rp.y, terrain, (c, r) => urethaneMgr.hasCellAt(c, r));
+    if (!lavaMgr.hasSolidAt(rp.tileX, rp.tileY)) plasticMgr.place(rp.x, rp.y, terrain, (c, r) => urethaneMgr.hasCellAt(c, r) || doorMgr.hasAt(c, r) || doorSwitchMgr.hasSolidAt(c, r));
   } else if (action === "nuclear") nuclearMgr.place(rp.x, rp.y, terrain);
   else if (action === "jumpingbomb") jumpingBombMgr.place(rp.x, rp.y, terrain);
   else if (action === "lava") lavaMgr.place(rp.x, rp.y, terrain);
@@ -1886,6 +1882,7 @@ netMgr.onAssign = (playerId, isHost) => {
   createGameEl.style.display = "none";
   joinGameEl.style.display = "none";
   shopEl.style.display = "flex";
+  shopChatLogEl.innerHTML = "";
   playShopMusic();
 
   const name = shopNameInput.value.trim() || "Player";
@@ -2085,6 +2082,11 @@ netMgr.onStateUpdate = (players, monsters, pushables, clones, doorSwitchOn, door
       if (np.dead && !player.dead) {
         player.dead = true;
         player.moving = false;
+        player.digPower = 1;
+        playerInventory.delete("dig_power_1");
+        playerInventory.delete("dig_power_2");
+        playerInventory.delete("dig_power_3");
+        carryOverDigPower = 1;
       }
       // Queue reconciliation — applied in game loop where weaponMgrs are accessible
       if (!player.dead) pendingHostPlayerState = np;
@@ -2636,10 +2638,10 @@ function loop(ts: number): void {
       else if (selectedWeapon === "bigdetonate") bigDetMgr.place(player.x, player.y, terrain, player.color);
       else if (selectedWeapon === "urethane") {
         if (!lavaMgr.hasSolidAt(player.tileX, player.tileY))
-          urethaneMgr.place(player.x, player.y, terrain, (c, r) => plasticMgr.hasCellAt(c, r));
+          urethaneMgr.place(player.x, player.y, terrain, (c, r) => plasticMgr.hasCellAt(c, r) || doorMgr.hasSolidAt(c, r) || doorSwitchMgr.hasSolidAt(c, r));
       } else if (selectedWeapon === "plastic") {
         if (!lavaMgr.hasSolidAt(player.tileX, player.tileY))
-          plasticMgr.place(player.x, player.y, terrain, (c, r) => urethaneMgr.hasCellAt(c, r));
+          plasticMgr.place(player.x, player.y, terrain, (c, r) => urethaneMgr.hasCellAt(c, r) || doorMgr.hasAt(c, r) || doorSwitchMgr.hasSolidAt(c, r));
       } else if (selectedWeapon === "nuclear") nuclearMgr.place(player.x, player.y, terrain);
       else if (selectedWeapon === "jumpingbomb") jumpingBombMgr.place(player.x, player.y, terrain);
       else if (selectedWeapon === "lava") lavaMgr.place(player.x, player.y, terrain);
@@ -2689,10 +2691,10 @@ function loop(ts: number): void {
       else if (selectedWeapon === "bigdetonate") bigDetMgr.place(player.x, player.y, terrain, player.color);
       else if (selectedWeapon === "urethane") {
         if (!lavaMgr.hasSolidAt(player.tileX, player.tileY))
-          urethaneMgr.place(player.x, player.y, terrain, (c, r) => plasticMgr.hasCellAt(c, r));
+          urethaneMgr.place(player.x, player.y, terrain, (c, r) => plasticMgr.hasCellAt(c, r) || doorMgr.hasSolidAt(c, r) || doorSwitchMgr.hasSolidAt(c, r));
       } else if (selectedWeapon === "plastic") {
         if (!lavaMgr.hasSolidAt(player.tileX, player.tileY))
-          plasticMgr.place(player.x, player.y, terrain, (c, r) => urethaneMgr.hasCellAt(c, r));
+          plasticMgr.place(player.x, player.y, terrain, (c, r) => urethaneMgr.hasCellAt(c, r) || doorMgr.hasAt(c, r) || doorSwitchMgr.hasSolidAt(c, r));
       } else if (selectedWeapon === "nuclear") nuclearMgr.place(player.x, player.y, terrain);
       else if (selectedWeapon === "jumpingbomb") jumpingBombMgr.place(player.x, player.y, terrain);
       else if (selectedWeapon === "lava") lavaMgr.place(player.x, player.y, terrain);
@@ -2810,7 +2812,7 @@ function loop(ts: number): void {
       }
     }
   }
-  flameBombMgr.update(player.x, player.y, terrain, (c, r) => doorMgr.hasSolidAt(c, r) || doorSwitchMgr.hasSolidAt(c, r));
+  flameBombMgr.update(player.x, player.y, terrain, (c, r) => doorMgr.hasSolidAt(c, r) || doorSwitchMgr.hasSolidAt(c, r) || boulderMgr.hasSolidAt(c, r));
   flamethrowerMgr.update(terrain);
   fireExtMgr.update();
   smallDetMgr.update(player.x, player.y, terrain);
@@ -3094,12 +3096,12 @@ function loop(ts: number): void {
     const ptt = `${player.targetTileX},${player.targetTileY}`;
     const inFire = (cells: Set<string>) => cells.has(pt) || cells.has(ptt);
     const isNew = (cells: Set<string>) => inFire(cells) && !activeFireCells.has(pt) && !activeFireCells.has(ptt);
-    if (inFire(flamethrowerFire)) player.health -= bombDmg(34);
+    if (isNew(flamethrowerFire)) player.health -= bombDmg(34);
     if (isNew(flameBombFire)) player.health -= bombDmg(84);
     if (isNew(tntFire)) player.health -= bombDmg(100);
     if (isNew(bigCrossFire)) player.health -= bombDmg(200);
     if (isNew(smallCrossFire)) player.health -= bombDmg(100);
-    if (isNew(grenadeFire)) player.health -= bombDmg(255);
+    if (isNew(grenadeFire)) player.health -= bombDmg(60);
     if (isNew(smallBombFire)) player.health -= bombDmg(60);
     if (isNew(bigBombFire)) player.health -= bombDmg(84);
     if (isNew(landmineFire)) player.health -= bombDmg(60);
@@ -3127,7 +3129,7 @@ function loop(ts: number): void {
         if (e.phase === "alive" && e.tileX === ptx && e.tileY === pty) player.health -= 3;
       }
       for (const g of grenadeMgr.getEntities()) {
-        if (g.phase === "flying" && g.tileX === ptx && g.tileY === pty) player.health -= 255;
+        if (g.phase === "flying" && g.tileX === ptx && g.tileY === pty) player.health -= 60;
       }
     }
     player.health = Math.max(0, player.health);
@@ -3135,6 +3137,11 @@ function loop(ts: number): void {
       player.dead = true;
       player.moving = false;
       player.digging = false;
+      player.digPower = 1;
+      playerInventory.delete("dig_power_1");
+      playerInventory.delete("dig_power_2");
+      playerInventory.delete("dig_power_3");
+      carryOverDigPower = 1;
       playSound("AARGH");
     }
   }
@@ -3146,12 +3153,12 @@ function loop(ts: number): void {
       const rptt = `${rp.targetTileX},${rp.targetTileY}`;
       const rpInFire = (cells: Set<string>) => cells.has(rpt) || cells.has(rptt);
       const rpIsNew = (cells: Set<string>) => rpInFire(cells) && !activeFireCells.has(rpt) && !activeFireCells.has(rptt);
-      if (rpInFire(flamethrowerFire)) rp.health -= bombDmg(34);
+      if (rpIsNew(flamethrowerFire)) rp.health -= bombDmg(34);
       if (rpIsNew(flameBombFire)) rp.health -= bombDmg(84);
       if (rpIsNew(tntFire)) rp.health -= bombDmg(100);
       if (rpIsNew(bigCrossFire)) rp.health -= bombDmg(200);
       if (rpIsNew(smallCrossFire)) rp.health -= bombDmg(100);
-      if (rpIsNew(grenadeFire)) rp.health -= bombDmg(255);
+      if (rpIsNew(grenadeFire)) rp.health -= bombDmg(60);
       if (rpIsNew(smallBombFire)) rp.health -= bombDmg(60);
       if (rpIsNew(bigBombFire)) rp.health -= bombDmg(84);
       if (rpIsNew(landmineFire)) rp.health -= bombDmg(60);
@@ -3199,7 +3206,7 @@ function loop(ts: number): void {
     [tntFire, bombDmg(100)],
     [bigCrossFire, bombDmg(200)],
     [smallCrossFire, bombDmg(100)],
-    [grenadeFire, bombDmg(255)],
+    [grenadeFire, bombDmg(60)],
     [smallBombFire, bombDmg(60)],
     [bigBombFire, bombDmg(84)],
     [landmineFire, bombDmg(60)],
@@ -3231,7 +3238,7 @@ function loop(ts: number): void {
   for (const t of landmineMgr.chainDetonate(allFire, terrain)) {
     if (netMgr.connected && netMgr.isHost) netMgr.sendWeaponAct("landmine_trigger", 0, 0, t.tileX, t.tileY, "none", false, 0);
   }
-  flameBombMgr.chainDetonate(allFire, terrain);
+  flameBombMgr.chainDetonate(allFire, terrain, (c, r) => doorMgr.hasSolidAt(c, r) || doorSwitchMgr.hasSolidAt(c, r) || boulderMgr.hasSolidAt(c, r));
   flamethrowerMgr.chainDetonate(allFire, terrain);
   smallDetMgr.chainDetonate(allFire, terrain);
   bigDetMgr.chainDetonate(allFire, terrain);

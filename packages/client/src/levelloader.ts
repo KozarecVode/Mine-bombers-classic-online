@@ -602,23 +602,17 @@ export function generateRandomLevel(treasureCount = 30): ParsedLevel {
     { kind: "treasure",  subtype: "diamond"     },  // Diamond       weight   3
   ];
   const randItemWeights = [18, 12, 8, 200, 200, 200, 200, 200, 180, 160, 140, 80, 3];
-  let treasuresInStone = 0;
   for (let i = 0; i < treasureCount; i++) {
     const item = weightedPick(randItems, randItemWeights);
-    if (treasuresInStone <= 20) {
-      const stoneTiles: [number, number][] = [];
-      for (let r = 1; r < MAP_HEIGHT - 1; r++)
-        for (let c = 1; c < MAP_WIDTH - 1; c++)
-          if (terrain[r][c]) stoneTiles.push([r, c]);
-      if (stoneTiles.length > 0) {
-        const [r, c] = stoneTiles[randInt(0, stoneTiles.length)];
-        terrain[r][c] = false;
-        detailMap[r][c] = { type: "ground", hp: 0 };
-        entities.push({ col: c, row: r, ...item });
-        treasuresInStone++;
-      }
-    } else {
-      entities.push({ col: randInt(1, MAP_WIDTH - 1), row: randInt(1, MAP_HEIGHT - 1), ...item });
+    const stoneTiles: [number, number][] = [];
+    for (let r = 1; r < MAP_HEIGHT - 1; r++)
+      for (let c = 1; c < MAP_WIDTH - 1; c++)
+        if (terrain[r][c]) stoneTiles.push([r, c]);
+    if (stoneTiles.length > 0) {
+      const [r, c] = stoneTiles[randInt(0, stoneTiles.length)];
+      terrain[r][c] = false;
+      detailMap[r][c] = { type: "ground", hp: 0 };
+      entities.push({ col: c, row: r, ...item });
     }
   }
 
