@@ -1,0 +1,160 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8"/>
+  <title>Sprite Sheet Debug</title>
+  <style>
+    body { background: #111; color: #eee; font-family: monospace; padding: 20px; }
+    canvas { border: 1px solid #555; display: block; margin: 10px 0; image-rendering: pixelated; }
+    h2 { margin: 20px 0 8px; color: #ffdd00; }
+    .row { display: flex; gap: 20px; align-items: flex-start; flex-wrap: wrap; }
+    .cell { text-align: center; font-size: 11px; }
+    .cell canvas { border: 1px solid #333; }
+  </style>
+</head>
+<body>
+<h1>Minebombers Sprite Sheet Viewer</h1>
+
+<h2>texture.png — full sheet (4× zoom) with 12px grid</h2>
+<canvas id="texFull"></canvas>
+<div id="texTiles" class="row" style="margin-bottom:20px"></div>
+
+<h2>player.bmp — full sheet</h2>
+<canvas id="playerFull"></canvas>
+
+<h2>rock.bmp</h2>
+<canvas id="rock"></canvas>
+
+<h2>ground.bmp</h2>
+<canvas id="ground"></canvas>
+
+<h2>player.bmp — individual frames (64×64 grid)</h2>
+<div id="frames" class="row"></div>
+
+<script>
+function loadImg(src) {
+  return new Promise((res, rej) => {
+    const img = new Image();
+    img.onload = () => res(img);
+    img.onerror = rej;
+    img.src = src;
+  });
+}
+
+function drawFull(canvasId, img, scale = 1) {
+  const c = document.getElementById(canvasId);
+  c.width  = img.width  * scale;
+  c.height = img.height * scale;
+  const ctx = c.getContext('2d');
+  ctx.imageSmoothingEnabled = false;
+  ctx.drawImage(img, 0, 0, c.width, c.height);
+  // grid lines at 64px intervals
+  if (scale > 0) {
+    ctx.strokeStyle = 'rgba(255,0,0,0.5)';
+    ctx.lineWidth = 1;
+    for (let x = 0; x <= img.width; x += 64) {
+      ctx.beginPath(); ctx.moveTo(x*scale, 0); ctx.lineTo(x*scale, c.height); ctx.stroke();
+    }
+    for (let y = 0; y <= img.height; y += 64) {
+      ctx.beginPath(); ctx.moveTo(0, y*scale); ctx.lineTo(c.width, y*scale); ctx.stroke();
+    }
+  }
+  return `${img.width}×${img.height}`;
+}
+
+async function main() {
+  const [player, rock, ground, tex] = await Promise.all([
+    loadImg('/art/player.bmp'),
+    loadImg('/art/rock.bmp'),
+    loadImg('/art/ground.bmp'),
+    loadImg('/art/texture.png'),
+  ]);
+
+  // texture.png — full sheet with 12px grid lines
+  {
+    const TILE = 12, SCALE = 8;
+    const c = document.getElementById('texFull');
+    c.width  = tex.width  * SCALE;
+    c.height = tex.height * SCALE;
+    const ctx = c.getContext('2d');
+    ctx.imageSmoothingEnabled = false;
+    ctx.drawImage(tex, 0, 0, c.width, c.height);
+    ctx.strokeStyle = 'rgba(255,0,0,0.7)';
+    ctx.lineWidth = 1;
+    for (let x = 0; x <= tex.width; x += TILE) {
+      ctx.beginPath(); ctx.moveTo(x*SCALE,0); ctx.lineTo(x*SCALE, c.height); ctx.stroke();
+    }
+    for (let y = 0; y <= tex.height; y += TILE) {
+      ctx.beginPath(); ctx.moveTo(0,y*SCALE); ctx.lineTo(c.width, y*SCALE); ctx.stroke();
+    }
+    // Label each tile index
+    ctx.fillStyle = 'yellow';
+    ctx.font = `${SCALE*1.2}px monospace`;
+    const cols = Math.floor(tex.width / TILE);
+    const rows = Math.floor(tex.height / TILE);
+    for (let r = 0; r < rows; r++) {
+      for (let cl = 0; cl < cols; cl++) {
+        ctx.fillText(String(r * cols + cl), cl*TILE*SCALE + 2, r*TILE*SCALE + SCALE*1.2);
+      }
+    }
+  }
+
+  // Extract individual 12×12 tiles from texture.png
+  {
+    const TILE = 12, SCALE = 8;
+    const container = document.getElementById('texTiles');
+    const totalCols = Math.floor(tex.width / TILE);
+    const totalRows = Math.floor(tex.height / TILE);
+    for (let r = 0; r < totalRows; r++) {
+      for (let cl = 0; cl < totalCols; cl++) {
+        const div = document.createElement('div'); div.className = 'cell';
+        const cv = document.createElement('canvas');
+        cv.width = TILE * SCALE; cv.height = TILE * SCALE;
+        const ctx = cv.getContext('2d'); ctx.imageSmoothingEnabled = false;
+        ctx.drawImage(tex, cl*TILE, r*TILE, TILE, TILE, 0, 0, TILE*SCALE, TILE*SCALE);
+        div.appendChild(cv);
+        div.appendChild(document.createTextNode(`tile ${r * totalCols + cl}`));
+        container.appendChild(div);
+      }
+    }
+  }
+
+  document.querySelector('h2').textContent += ` (${drawFull('playerFull', player, 2)})`;
+  drawFull('rock',   rock,   4);
+  drawFull('ground', ground, 4);
+
+  // Extract individual 64×64 frames
+  const frameW = 64, frameH = 64;
+  const cols = Math.floor(player.width  / frameW);
+  const rows = Math.floor(player.height / frameH);
+
+  const container = document.getElementById('frames');
+  const rowLabels = ['walk', 'dig', 'stop', 'row3'];
+
+  for (let row = 0; row < rows; row++) {
+    for (let col = 0; col < cols; col++) {
+      const div = document.createElement('div');
+      div.className = 'cell';
+
+      const c = document.createElement('canvas');
+      c.width  = frameW * 2;
+      c.height = frameH * 2;
+      const ctx = c.getContext('2d');
+      ctx.imageSmoothingEnabled = false;
+      ctx.drawImage(player, col*frameW, row*frameH, frameW, frameH, 0, 0, frameW*2, frameH*2);
+
+      div.appendChild(c);
+      div.appendChild(document.createTextNode(`${rowLabels[row] ?? 'r'+row} f${col}`));
+      container.appendChild(div);
+    }
+    // row separator
+    const br = document.createElement('div');
+    br.style.width = '100%';
+    container.appendChild(br);
+  }
+}
+
+main().catch(console.error);
+</script>
+</body>
+</html>
