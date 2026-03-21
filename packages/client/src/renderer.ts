@@ -330,7 +330,7 @@ export class Renderer {
     ctx.fillText(`${p.digPower}`, panelX + 55, textY);
     ctx.textAlign = "right";
     ctx.fillStyle = "#ffdd00";
-    ctx.fillText(`$${playerGold + p.cash}`, panelX + 75, textY2);
+    ctx.fillText(`$${playerGold}`, panelX + 75, textY2);
     ctx.textAlign = "left";
     ctx.textBaseline = "top";
   }

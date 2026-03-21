@@ -134,6 +134,7 @@ export class PlasticManager {
 
   hasSolidAt(col: number, row: number): boolean {
     for (const e of this.entities) {
+      if (e.phase === "placed" && e.centerX === col && e.centerY === row) return true;
       if (e.phase === "armed") {
         for (const [c, r] of e.armedCells) if (c === col && r === row) return true;
       }
@@ -141,7 +142,16 @@ export class PlasticManager {
     return false;
   }
 
-  tryPush(_col: number, _row: number, _dc: number, _dr: number, _terrain: Terrain): boolean { return false; }
+  tryPush(col: number, row: number, dc: number, dr: number, terrain: Terrain): boolean {
+    const e = this.entities.find(e => e.phase === "placed" && e.centerX === col && e.centerY === row);
+    if (!e) return true;
+    const nc = col + dc, nr = row + dr;
+    if (isStone(terrain, nc, nr) || this.hasSolidAt(nc, nr)) return false;
+    e.centerX = nc;
+    e.centerY = nr;
+    e.armedCells = [[nc, nr]];
+    return true;
+  }
 
   private static readonly CELL_DIG_HP = BASE_DIG_RATE * 60 * 2; // ~2 s at digPower=1
   private digHp = new Map<string, number>();

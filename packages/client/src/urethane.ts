@@ -13,6 +13,7 @@ export interface UrethaneEntity {
   centerY: number;
   cells: [number, number][]; // full diamond — revealed only when burning
   isStatic?: boolean;
+  blocked?: (col: number, row: number) => boolean;
 }
 
 export interface UrethaneFire {
@@ -31,18 +32,6 @@ const FIRE_TICKS_PER_FRAME = 2;
 //
 // Diamond: center row 11 wide, each level ±1 loses 2 tiles, 5 levels up/down.
 
-function buildPattern(): [number, number][] {
-  const result: [number, number][] = [];
-  for (let dy = -5; dy <= 5; dy++) {
-    const half = 5 - Math.abs(dy);
-    for (let dx = -half; dx <= half; dx++) {
-      result.push([dx, dy]);
-    }
-  }
-  return result;
-}
-
-const PATTERN = buildPattern();
 
 // ── Manager ──────────────────────────────────────────────────────────────────
 
@@ -80,7 +69,7 @@ export class UrethaneManager {
     const smallCells = bfs(5);
     const cells = smallCells.length < 30 ? bfs(15) : smallCells;
 
-    this.entities.push({ id: this.nextId++, phase: "placed", tick: 0, centerX: tileX, centerY: tileY, cells });
+    this.entities.push({ id: this.nextId++, phase: "placed", tick: 0, centerX: tileX, centerY: tileY, cells, blocked });
   }
 
   hasCellAt(col: number, row: number): boolean {
@@ -150,6 +139,7 @@ export class UrethaneManager {
 
   hasSolidAt(col: number, row: number): boolean {
     for (const e of this.entities) {
+      if (e.phase === "placed" && e.centerX === col && e.centerY === row) return true;
       if (e.phase === "burning" && !e.isStatic) {
         for (const [c, r] of e.cells) if (c === col && r === row) return true;
       }
@@ -157,7 +147,37 @@ export class UrethaneManager {
     return false;
   }
 
-  tryPush(_col: number, _row: number, _dc: number, _dr: number, _terrain: Terrain): boolean { return false; }
+  tryPush(col: number, row: number, dc: number, dr: number, terrain: Terrain): boolean {
+    const e = this.entities.find(e => e.phase === "placed" && e.centerX === col && e.centerY === row);
+    if (!e) return true;
+    const nc = col + dc, nr = row + dr;
+    if (isStone(terrain, nc, nr) || this.hasSolidAt(nc, nr)) return false;
+    e.centerX = nc;
+    e.centerY = nr;
+    // Recompute BFS spread from new position
+    const rows = terrain.length, cols = terrain[0].length;
+    const bfs = (cx: number, cy: number, maxHalf: number): [number, number][] => {
+      const cells: [number, number][] = [];
+      const visited = new Set<string>(`${cx},${cy}`);
+      const queue: [number, number][] = [[cx, cy]];
+      while (queue.length > 0) {
+        const [c, r] = queue.shift()!;
+        if (c <= 0 || c >= cols - 1 || r <= 0 || r >= rows - 1) continue;
+        if (isStone(terrain, c, r)) continue;
+        if (e.blocked?.(c, r)) continue;
+        cells.push([c, r]);
+        if (Math.abs(c - cx) + Math.abs(r - cy) >= maxHalf) continue;
+        for (const [dcc, drr] of [[-1,0],[1,0],[0,-1],[0,1]] as const) {
+          const key = `${c+dcc},${r+drr}`;
+          if (!visited.has(key)) { visited.add(key); queue.push([c+dcc, r+drr]); }
+        }
+      }
+      return cells;
+    };
+    const small = bfs(nc, nr, 5);
+    e.cells = small.length < 30 ? bfs(nc, nr, 15) : small;
+    return true;
+  }
 
   /**
    * Flamebomb/flamethrower fire hitting burning urethane spreads inward via BFS,

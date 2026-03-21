@@ -11,6 +11,8 @@ export interface RemoteInput {
   stopPressed: boolean;
   stopTileX?: number;
   stopTileY?: number;
+  teleportTileX?: number;
+  teleportTileY?: number;
   armorBonus?: number;
 }
 
@@ -25,7 +27,7 @@ export class NetworkManager {
   onHostLeft?: () => void;
   onGameInProgress?: () => void;
   onInitData?: (data: LevelInitData) => void;
-  onStateUpdate?: (players: NetPlayer[], monsters: NetMonster[], pushables: NetPushable[], clones: NetClone[], doorSwitchOn: boolean, doorOpen: boolean, lava: Array<{ id: number; cells: [number, number][] }>, urethane: Array<{ id: number; phase: string; cells: [number, number][] }>, plastic: Array<{ id: number; phase: string; armedCells: [number, number][]; explosionCells: [number, number][] }>, roundTick: number) => void;
+  onStateUpdate?: (players: NetPlayer[], monsters: NetMonster[], pushables: NetPushable[], clones: NetClone[], doorSwitchOn: boolean, doorOpen: boolean, lava: Array<{ id: number; cells: [number, number][] }>, urethane: Array<{ id: number; phase: string; cells: [number, number][] }>, plastic: Array<{ id: number; phase: string; centerX: number; centerY: number; armedCells: [number, number][]; explosionCells: [number, number][] }>, roundTick: number) => void;
   onTerrainChange?: (changes: TerrainChange[]) => void;
   onLobbyUpdate?: (players: LobbyPlayer[]) => void;
   onPlayerName?: (playerId: number, name: string) => void;
@@ -85,7 +87,8 @@ export class NetworkManager {
         break;
       case 'init': {
         const { terrain, detailMap, entities, spawnCol, spawnRow, playerSpawns } = msg;
-        this.onInitData?.({ terrain, detailMap, entities, spawnCol, spawnRow, playerSpawns });
+        const config = (msg as any).config;
+        this.onInitData?.({ terrain, detailMap, entities, spawnCol, spawnRow, playerSpawns, ...(config ? { config } : {}) } as any);
         break;
       }
       case 'state':
@@ -105,7 +108,7 @@ export class NetworkManager {
           const raw = msg as unknown as { seq?: number; stopPressed?: boolean; stopTileX?: number; stopTileY?: number };
           const seq = raw.seq ?? 0;
           const stopPressed = raw.stopPressed ?? false;
-          const ri: RemoteInput = { dir: msg.dir, actions: msg.actions, digPower: msg.digPower ?? 1, gold: msg.gold ?? 0, seq, stopPressed, stopTileX: raw.stopTileX, stopTileY: raw.stopTileY, armorBonus: (raw as any).armorBonus };
+          const ri: RemoteInput = { dir: msg.dir, actions: msg.actions, digPower: msg.digPower ?? 1, gold: msg.gold ?? 0, seq, stopPressed, stopTileX: raw.stopTileX, stopTileY: raw.stopTileY, teleportTileX: (raw as any).teleportTileX, teleportTileY: (raw as any).teleportTileY, armorBonus: (raw as any).armorBonus };
           // Also keep last-received for gold reads and fallback
           this.remoteInputs.set(msg.fromPlayerId, ri);
           this.lastRemoteInputSeq.set(msg.fromPlayerId, seq);
@@ -144,12 +147,12 @@ export class NetworkManager {
   }
 
   // HOST: broadcast full level data to all clients
-  sendInit(data: LevelInitData): void {
-    this.send({ type: 'init', ...data });
+  sendInit(data: LevelInitData, config?: Record<string, unknown>): void {
+    this.send({ type: 'init', ...data, config });
   }
 
   // HOST: send state snapshot — internally throttled to SNAPSHOT_EVERY ticks
-  sendSnapshot(players: NetPlayer[], monsters: NetMonster[], pushables: NetPushable[], clones: NetClone[], doorSwitchOn: boolean, doorOpen: boolean, lava: Array<{ id: number; cells: [number, number][] }>, urethane: Array<{ id: number; phase: string; cells: [number, number][] }>, plastic: Array<{ id: number; phase: string; armedCells: [number, number][]; explosionCells: [number, number][] }>, roundTick: number): void {
+  sendSnapshot(players: NetPlayer[], monsters: NetMonster[], pushables: NetPushable[], clones: NetClone[], doorSwitchOn: boolean, doorOpen: boolean, lava: Array<{ id: number; cells: [number, number][] }>, urethane: Array<{ id: number; phase: string; cells: [number, number][] }>, plastic: Array<{ id: number; phase: string; centerX: number; centerY: number; armedCells: [number, number][]; explosionCells: [number, number][] }>, roundTick: number): void {
     this.gameTick++;
     if (this.gameTick % this.SNAPSHOT_EVERY !== 0) return;
     const msg = { type: 'state', tick: this.gameTick, roundTick, players, monsters, pushables, clones, doorSwitchOn, doorOpen, lava, urethane, plastic };
@@ -219,8 +222,8 @@ export class NetworkManager {
   }
 
   // CLIENT: send direction + weapon actions to host each frame
-  sendInput(dir: NetDir, actions: string[], digPower: number, gold: number, seq = 0, stopPressed = false, stopTileX?: number, stopTileY?: number, armorBonus?: number): void {
-    this.send({ type: 'input', dir, actions, digPower, gold, seq, stopPressed, stopTileX, stopTileY, armorBonus } as unknown as NetMsg);
+  sendInput(dir: NetDir, actions: string[], digPower: number, gold: number, seq = 0, stopPressed = false, stopTileX?: number, stopTileY?: number, armorBonus?: number, teleportTileX?: number, teleportTileY?: number): void {
+    this.send({ type: 'input', dir, actions, digPower, gold, seq, stopPressed, stopTileX, stopTileY, armorBonus, teleportTileX, teleportTileY } as unknown as NetMsg);
   }
 
   // HOST: read latest input from a remote player (non-consuming, for gold/stats reads)

@@ -748,6 +748,7 @@ function startGameFromLobby(): void {
     : (cachedRandomLevel ?? generateRandomLevel(tournamentConfig.treasures));
   cachedRandomLevel = null;
   applyParsedLevel(parsed);
+  startGame();
 
   if (netMgr.connected && netMgr.isHost) {
     // Randomly assign corners to players, then clear L-shaped entrance arms
@@ -796,7 +797,7 @@ function startGameFromLobby(): void {
       spawnCol: parsed.spawnCol,
       spawnRow: parsed.spawnRow,
       playerSpawns,
-    });
+    }, { ...tournamentConfig, priceMultiplier } as unknown as Record<string, unknown>);
     prevTerrain = terrain.map((row) => [...row]);
     prevDetailType = detailMap.map((row) => row.map((c) => c.type));
     prevBurnedGround = detailMap.map((row) => row.map((c) => !!c.burnedGround));
@@ -826,8 +827,6 @@ function startGameFromLobby(): void {
     prevTileX = tx;
     prevTileY = ty;
   }
-
-  startGame();
 }
 
 function renderShopPlayerList(): void {
@@ -1405,12 +1404,15 @@ function startGame(): void {
   roundTick = 0;
 
   // Apply free market price randomization (70–120% of base price per round)
-  if (tournamentConfig.freeMarker) {
-    priceMultiplier = 0.7 + Math.random() * 0.5;
-  } else {
-    priceMultiplier = 1.0;
+  // Clients receive priceMultiplier from host via init message — only host generates it
+  if (!netMgr.connected || netMgr.isHost) {
+    if (tournamentConfig.freeMarker) {
+      priceMultiplier = 0.7 + Math.random() * 0.5;
+    } else {
+      priceMultiplier = 1.0;
+    }
+    updateShopPrices();
   }
-  updateShopPrices();
 
   // Copy shop inventory into per-game inventory
   gameInventory = new Map(playerInventory);
@@ -1624,7 +1626,7 @@ loadAssets()
     assets = a;
     renderer.initPatterns(assets);
     assetsReady = true;
-    playShopMusic();
+    playMenuMusic();
   })
   .catch(() => {
     // assets failed silently — game will stay on shop screen
@@ -1802,11 +1804,16 @@ document.addEventListener("keydown", (e) => {
       const d = e.key === "ArrowRight" ? 1 : -1;
       if (item.type === "bar") {
         tournamentConfig[item.field] = Math.max(item.min, Math.min(item.max, tournamentConfig[item.field] + d * item.step)) as never;
+        if (item.field === "treasures") {
+          cachedRandomLevel = generateRandomLevel(tournamentConfig.treasures);
+          if (selectedLevel === "__random__") updateShopMapThumb(buildThumbnailFromParsed(cachedRandomLevel));
+        }
       } else if (item.type === "toggle") {
         tournamentConfig[item.field] = !tournamentConfig[item.field] as never;
       } else if (item.type === "winner") {
         tournamentConfig.winCondition = tournamentConfig.winCondition === "money" ? "wins" : "money";
       }
+      if (netMgr.connected && netMgr.isHost) netMgr.sendConfig({ ...tournamentConfig });
     } else if (e.key === "Delete") {
       Object.assign(tournamentConfig, OPT_DEFAULTS);
       input.setBindings({ ...DEFAULT_BINDINGS });
@@ -1883,6 +1890,10 @@ netMgr.onAssign = (playerId, isHost) => {
   joinGameEl.style.display = "none";
   shopEl.style.display = "flex";
   shopChatLogEl.innerHTML = "";
+  if (!selectedLevel) {
+    cachedRandomLevel = generateRandomLevel(tournamentConfig.treasures);
+    updateShopMapThumb(buildThumbnailFromParsed(cachedRandomLevel));
+  }
   playShopMusic();
 
   const name = shopNameInput.value.trim() || "Player";
@@ -2011,6 +2022,10 @@ netMgr.onGameConfig = (cfg) => {
   // Clients always defer to the host's config
   if (!netMgr.isHost) {
     Object.assign(tournamentConfig, cfg);
+    if (currentRound === 0) {
+      playerGold = tournamentConfig.startingCash;
+      shopGoldEl.textContent = String(playerGold);
+    }
     renderOptions();
   }
 };
@@ -2035,6 +2050,12 @@ netMgr.onPlayerReady = (playerId, isReady) => {
 };
 
 netMgr.onInitData = (data) => {
+  if ((data as any).config) {
+    const { priceMultiplier: pm, ...cfg } = (data as any).config;
+    Object.assign(tournamentConfig, cfg);
+    if (pm !== undefined) { priceMultiplier = pm; updateShopPrices(); }
+    if (currentRound === 0) playerGold = tournamentConfig.startingCash;
+  }
   applyParsedLevel(data as Parameters<typeof applyParsedLevel>[0]);
   // Apply host's random corner assignments so spawnPos() returns correct positions
   playerSpawnMap.clear();
@@ -2082,10 +2103,6 @@ netMgr.onStateUpdate = (players, monsters, pushables, clones, doorSwitchOn, door
       if (np.dead && !player.dead) {
         player.dead = true;
         player.moving = false;
-        player.digPower = 1;
-        playerInventory.delete("dig_power_1");
-        playerInventory.delete("dig_power_2");
-        playerInventory.delete("dig_power_3");
         carryOverDigPower = 1;
       }
       // Queue reconciliation — applied in game loop where weaponMgrs are accessible
@@ -2484,7 +2501,9 @@ function loop(ts: number): void {
           updatePlayer(rp, rdir, ri.stopPressed, terrain, weaponMgrs, rpMoveSpeed, pushBlocker);
         }
         if (rp.tileX !== prevRpTileX || rp.tileY !== prevRpTileY) {
-          const rpDest = teleportMgr.tryTeleport(rp.tileX, rp.tileY);
+          const rpDest = ri.teleportTileX !== undefined && ri.teleportTileY !== undefined
+            ? [ri.teleportTileX, ri.teleportTileY] as [number, number]
+            : teleportMgr.tryTeleport(rp.tileX, rp.tileY);
           if (rpDest) {
             rp.x = rpDest[0] * TILE_SIZE;
             rp.y = rpDest[1] * TILE_SIZE;
@@ -2578,6 +2597,8 @@ function loop(ts: number): void {
   const tileChanged = player.tileX !== prevTileX || player.tileY !== prevTileY;
   prevTileX = player.tileX;
   prevTileY = player.tileY;
+  let pendingTeleportTileX: number | undefined;
+  let pendingTeleportTileY: number | undefined;
   if (tileChanged) {
     const teleportDest = teleportMgr.tryTeleport(player.tileX, player.tileY);
     if (teleportDest) {
@@ -2591,6 +2612,8 @@ function loop(ts: number): void {
       player.pendingStop = false;
       prevTileX = dc;
       prevTileY = dr;
+      pendingTeleportTileX = dc;
+      pendingTeleportTileY = dr;
     }
   }
   doorSwitchMgr.endFrame();
@@ -2618,7 +2641,7 @@ function loop(ts: number): void {
     // When stopping, include the tile the client snapped to so the host uses the exact same position
     const stopTileX = stopPressed ? (player.moving ? player.targetTileX : player.tileX) : undefined;
     const stopTileY = stopPressed ? (player.moving ? player.targetTileY : player.tileY) : undefined;
-    netMgr.sendInput(inputDir as NetDir, netActions, player.digPower, playerGold, inputSeq, stopPressed, stopTileX, stopTileY, playerArmorBonus);
+    netMgr.sendInput(inputDir as NetDir, netActions, player.digPower, playerGold, inputSeq, stopPressed, stopTileX, stopTileY, playerArmorBonus, pendingTeleportTileX, pendingTeleportTileY);
     inputSendTimes.set(inputSeq, Date.now());
     // Mirror weapon placement locally so bombs/explosions are visible on client
     if (!player.dead && netActions.some((a) => a === selectedWeapon || a.startsWith(selectedWeapon + "@"))) {
@@ -2912,6 +2935,18 @@ function loop(ts: number): void {
         m.teleportCooldown = 60;
       }
     }
+    for (const e of cloneMgr.getEntities()) {
+      if (e.phase !== "alive") continue;
+      if ((e as any).teleportCooldown > 0) { (e as any).teleportCooldown--; continue; }
+      const dest = teleportMgr.tryTeleport(e.tileX, e.tileY);
+      if (dest) {
+        e.tileX = dest[0]; e.tileY = dest[1];
+        e.x = dest[0] * TILE_SIZE; e.y = dest[1] * TILE_SIZE;
+        e.targetTileX = dest[0]; e.targetTileY = dest[1];
+        e.moving = false;
+        (e as any).teleportCooldown = 60;
+      }
+    }
   }
 
   // Monster tiles set and clone AI — host only (clients get clone state via state update)
@@ -3137,10 +3172,6 @@ function loop(ts: number): void {
       player.dead = true;
       player.moving = false;
       player.digging = false;
-      player.digPower = 1;
-      playerInventory.delete("dig_power_1");
-      playerInventory.delete("dig_power_2");
-      playerInventory.delete("dig_power_3");
       carryOverDigPower = 1;
       playSound("AARGH");
     }
