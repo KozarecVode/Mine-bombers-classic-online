@@ -262,6 +262,7 @@ export class UrethaneManager {
     for (const d of data) {
       const e = byId.get(d.id);
       if (e) {
+        if (e.phase === "placed" && d.phase === "burning") this._justSpread = true;
         e.phase = d.phase as UrethanePhase;
         e.cells = d.cells.slice() as [number, number][];
       } else {

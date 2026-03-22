@@ -2114,11 +2114,8 @@ netMgr.onStateUpdate = (players, monsters, pushables, clones, doorSwitchOn, door
       }
       const rp = remotePlayers.get(np.id);
       if (rp) {
-        // Hard-snap position only if too far off (otherwise let smooth lerp continue)
-        if (Math.abs(rp.tileX - np.tileX) > 2 || Math.abs(rp.tileY - np.tileY) > 2) {
-          rp.x = np.x;
-          rp.y = np.y;
-        }
+        rp.x = np.x;
+        rp.y = np.y;
         rp.tileX = np.tileX;
         rp.tileY = np.tileY;
         rp.targetTileX = np.targetTileX;
