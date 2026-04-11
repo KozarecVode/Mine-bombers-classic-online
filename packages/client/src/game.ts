@@ -1,7 +1,7 @@
-import { TILE_SIZE, PLAYER_SPEED } from '@minebombers/shared';
-import { Terrain, isStone } from './terrain.js';
+import { TILE_SIZE, PLAYER_SPEED } from "@minebombers/shared";
+import { Terrain, isStone } from "./terrain.js";
 
-export type Dir = 'up' | 'down' | 'left' | 'right' | 'none';
+export type Dir = "up" | "down" | "left" | "right" | "none";
 
 interface WeaponMgr {
   hasSolidAt(col: number, row: number): boolean;
@@ -11,15 +11,15 @@ interface WeaponMgr {
 export const MAX_HEALTH = 100;
 
 export interface LocalPlayer {
-  x: number;           // pixel position (interpolated, top-left of sprite)
+  x: number; // pixel position (interpolated, top-left of sprite)
   y: number;
-  tileX: number;       // current tile (source tile during slide)
+  tileX: number; // current tile (source tile during slide)
   tileY: number;
   targetTileX: number; // destination tile during slide
   targetTileY: number;
   dir: Dir;
   moving: boolean;
-  digging: boolean;    // pressing into a diggable tile
+  digging: boolean; // pressing into a diggable tile
   pendingStop: boolean; // stop at next tile boundary
   animFrame: number;
   animTick: number;
@@ -30,6 +30,7 @@ export interface LocalPlayer {
   digPower: number;
   dead: boolean;
   armorBonus: number;
+  teleportHighlightTick: number;
 }
 
 const ANIM_TICKS = 5;
@@ -42,7 +43,7 @@ export function createLocalPlayer(name: string, color: number, startTileX = 2, s
     tileY: startTileY,
     targetTileX: startTileX,
     targetTileY: startTileY,
-    dir: 'down',
+    dir: "down",
     moving: false,
     digging: false,
     pendingStop: false,
@@ -55,6 +56,7 @@ export function createLocalPlayer(name: string, color: number, startTileX = 2, s
     digPower: 1,
     dead: false,
     armorBonus: 0,
+    teleportHighlightTick: 0,
   };
 }
 
@@ -71,7 +73,7 @@ export function updatePlayer(
 
   if (player.moving) {
     // Mid-slide direction change: snap to nearest tile and redirect immediately
-    if (dir !== 'none' && dir !== player.dir) {
+    if (dir !== "none" && dir !== player.dir) {
       player.tileX = Math.round(player.x / TILE_SIZE);
       player.tileY = Math.round(player.y / TILE_SIZE);
       player.x = player.tileX * TILE_SIZE;
@@ -100,8 +102,8 @@ export function updatePlayer(
           player.moving = false;
           player.pendingStop = false;
         } else {
-          const nextDir = dir !== 'none' ? dir : player.dir;
-          if (dir !== 'none') player.dir = dir;
+          const nextDir = dir !== "none" ? dir : player.dir;
+          if (dir !== "none") player.dir = dir;
           startMove(player, nextDir, terrain, weapons, extraBlocksPush);
         }
       } else {
@@ -112,7 +114,7 @@ export function updatePlayer(
     }
   } else {
     // At rest — start moving if a direction is pressed
-    if (dir !== 'none') {
+    if (dir !== "none") {
       player.dir = dir;
       player.pendingStop = false;
       startMove(player, dir, terrain, weapons, extraBlocksPush);
@@ -138,8 +140,8 @@ function startMove(
   weapons: WeaponMgr[],
   extraBlocksPush: (col: number, row: number) => boolean = () => false,
 ): void {
-  const dcol = dir === 'right' ? 1 : dir === 'left' ? -1 : 0;
-  const drow = dir === 'down'  ? 1 : dir === 'up'   ? -1 : 0;
+  const dcol = dir === "right" ? 1 : dir === "left" ? -1 : 0;
+  const drow = dir === "down" ? 1 : dir === "up" ? -1 : 0;
   const nc = player.tileX + dcol;
   const nr = player.tileY + drow;
 
@@ -150,8 +152,7 @@ function startMove(
   for (const w of weapons) {
     if (w.hasSolidAt(nc, nr)) {
       // Check push destination against ALL managers and extra blockers (e.g. teleports)
-      const destBlocked = weapons.some(other => other.hasSolidAt(nc + dcol, nr + drow))
-        || extraBlocksPush(nc + dcol, nr + drow);
+      const destBlocked = weapons.some((other) => other.hasSolidAt(nc + dcol, nr + drow)) || extraBlocksPush(nc + dcol, nr + drow);
       if (destBlocked || !w.tryPush(nc, nr, dcol, drow, terrain)) {
         player.moving = false;
         return;

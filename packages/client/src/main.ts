@@ -1496,15 +1496,21 @@ function returnToLobby(clientBankedCash?: number): void {
       }
     }
 
-    // Step 1: Apply 7% interest to banked cash only
+    // Step 1: Apply tiered interest to banked cash (7% up to 3000, 4% up to 5000, 0% above)
     for (const p of allPlayerData) {
-      p.bankedCash = Math.floor(p.bankedCash * 1.07);
+      const tier1 = Math.min(p.bankedCash, 3000);
+      const tier2 = Math.max(0, Math.min(p.bankedCash, 5000) - 3000);
+      p.bankedCash += Math.floor(tier1 * 0.07) + Math.floor(tier2 * 0.04);
     }
 
-    // Step 2: Dead players' round gold → lost money pool
+    // Step 2: Dead players keep 25% of round gold; remaining 75% → lost money pool
     let lostPool = 0;
     for (const p of allPlayerData) {
-      if (!p.survived) lostPool += p.roundGold;
+      if (!p.survived) {
+        const kept = Math.floor(p.roundGold * 0.25);
+        p.bankedCash += kept;
+        lostPool += p.roundGold - kept;
+      }
     }
 
     // Step 3: If exactly one survivor, add 40% of uncollected map gold to pool
@@ -2607,12 +2613,14 @@ function loop(ts: number): void {
       player.targetTileX = dc;
       player.targetTileY = dr;
       player.pendingStop = false;
+      player.teleportHighlightTick = 90;
       prevTileX = dc;
       prevTileY = dr;
       pendingTeleportTileX = dc;
       pendingTeleportTileY = dr;
     }
   }
+  if (player.teleportHighlightTick > 0) player.teleportHighlightTick--;
   doorSwitchMgr.endFrame();
   if ((!netMgr.connected || netMgr.isHost) && doorSwitchMgr.consumePending()) {
     doorMgr.toggle();
@@ -2893,23 +2901,33 @@ function loop(ts: number): void {
   const monsterApplyDig = (col: number, row: number, digPower: number): void => {
     accumulateDig(col, row, digPower);
   };
+  const monsterTryPush = (col: number, row: number, dcol: number, drow: number): boolean => {
+    for (const w of weaponMgrs) {
+      if (w.hasSolidAt(col, row)) {
+        const nc = col + dcol, nr = row + drow;
+        if (isStone(terrain, nc, nr) || weaponMgrs.some(o => o.hasSolidAt(nc, nr)) || pushBlocker(nc, nr)) return false;
+        return w.tryPush(col, row, dcol, drow, terrain);
+      }
+    }
+    return false;
+  };
   if (!netMgr.connected || netMgr.isHost) {
     const allPlayerPositions = [
       ...(player.dead ? [] : [{ tileX: player.tileX, tileY: player.tileY }]),
       ...[...remotePlayers.values()].filter((rp) => !rp.dead).map((rp) => ({ tileX: rp.tileX, tileY: rp.tileY })),
     ];
-    slimeMgr.update(terrain, slimeSolidAt, allPlayerPositions, monsterApplyDig);
+    slimeMgr.update(terrain, slimeSolidAt, allPlayerPositions, monsterApplyDig, monsterTryPush);
     for (const e of slimeMgr.getEntities()) if (e.phase === "alive") treasureMgr.collectAt(e.tileX, e.tileY);
-    brownMgr.update(terrain, slimeSolidAt, allPlayerPositions, monsterApplyDig);
+    brownMgr.update(terrain, slimeSolidAt, allPlayerPositions, monsterApplyDig, monsterTryPush);
     for (const e of brownMgr.getEntities()) if (e.phase === "alive") treasureMgr.collectAt(e.tileX, e.tileY);
-    const grenadierThrows = grenadierMgr.update(terrain, slimeSolidAt, allPlayerPositions, grenadeMgr, monsterApplyDig);
+    const grenadierThrows = grenadierMgr.update(terrain, slimeSolidAt, allPlayerPositions, grenadeMgr, monsterApplyDig, monsterTryPush);
     if (netMgr.connected && netMgr.isHost) {
       for (const t of grenadierThrows) {
         netMgr.sendWeaponAct("grenadier_grenade", 0, 0, t.tileX, t.tileY, t.dir, false, 0);
       }
     }
     for (const e of grenadierMgr.getEntities()) if (e.phase === "alive") treasureMgr.collectAt(e.tileX, e.tileY);
-    greyMgr.update(terrain, slimeSolidAt, allPlayerPositions, monsterApplyDig);
+    greyMgr.update(terrain, slimeSolidAt, allPlayerPositions, monsterApplyDig, monsterTryPush);
     for (const e of greyMgr.getEntities()) if (e.phase === "alive") treasureMgr.collectAt(e.tileX, e.tileY);
 
     // Teleport monsters that step on a teleport pad (60-frame cooldown prevents re-teleport)
@@ -2975,6 +2993,7 @@ function loop(ts: number): void {
       player.digPower,
       monsterApplyDig,
       allPlayerTiles,
+      monsterTryPush,
     );
     // Clones collect treasure they walk onto; play pickaxe sound when digging hard tiles
     for (const e of cloneMgr.getEntities()) {

@@ -33,6 +33,7 @@ import { CloneManager } from "./clone.js";
 import { MAX_HEALTH } from "./game.js";
 
 const DISPLAY_SCALE = 3; // render everything at 3× — game logic stays at native tile size
+const PLAYER_BAR_COLORS = ["#00008B", "#ff2222", "#22cc44", "#ffdd00"];
 
 // ── HUD palette ───────────────────────────────────────────────────────────────
 const HUD_BG = "#000000";
@@ -280,7 +281,7 @@ export class Renderer {
     ctx.drawImage(panel, panelX, panelY, panelW, panelH);
 
     // Vertical HP bar on the right side of the panel
-    const BAR_COLORS = ["#00008B ", "#ff2222", "#22cc44", "#ffdd00"];
+    const BAR_COLORS = PLAYER_BAR_COLORS;
     const barX = panelX + 133;
     const barW = 8;
     const barH = panelH - 4;
@@ -888,5 +889,28 @@ export class Renderer {
       py = Math.round(p.y) + HUD_HEIGHT;
     const frame = p.moving || p.digging ? frames[p.animFrame % frames.length] : frames[0];
     this.ctx.drawImage(frame, px, py, TILE_SIZE, TILE_SIZE);
+
+    if (p.teleportHighlightTick > 0) {
+      const DURATION = 90;
+      const cx = px + TILE_SIZE / 2;
+      const cy = py + TILE_SIZE / 2;
+      const MAX_R = TILE_SIZE * 3;
+      const overall = p.teleportHighlightTick / DURATION;
+      const hex = PLAYER_BAR_COLORS[p.color] ?? PLAYER_BAR_COLORS[0];
+      const cr = parseInt(hex.slice(1, 3), 16);
+      const cg = parseInt(hex.slice(3, 5), 16);
+      const cb = parseInt(hex.slice(5, 7), 16);
+      for (let i = 0; i < 3; i++) {
+        const progress = ((1 - p.teleportHighlightTick / DURATION) + i / 3) % 1;
+        const r = progress * MAX_R;
+        const alpha = (1 - progress) * overall * 0.9;
+        if (alpha <= 0 || r <= 1) continue;
+        this.ctx.beginPath();
+        this.ctx.arc(cx, cy, r, 0, Math.PI * 2);
+        this.ctx.strokeStyle = `rgba(${cr},${cg},${cb},${alpha.toFixed(3)})`;
+        this.ctx.lineWidth = 2;
+        this.ctx.stroke();
+      }
+    }
   }
 }

@@ -149,7 +149,7 @@ export class UrethaneManager {
 
   tryPush(col: number, row: number, dc: number, dr: number, terrain: Terrain): boolean {
     const e = this.entities.find(e => e.phase === "placed" && e.centerX === col && e.centerY === row);
-    if (!e) return true;
+    if (!e) return false; // burning urethane (incl. level tiles) can't be pushed
     const nc = col + dc, nr = row + dr;
     if (isStone(terrain, nc, nr) || this.hasSolidAt(nc, nr)) return false;
     e.centerX = nc;

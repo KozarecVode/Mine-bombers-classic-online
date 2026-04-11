@@ -15,6 +15,9 @@ const DIRS: Dir[] = ['up', 'down', 'left', 'right'];
 
 function dc(dir: Dir) { return dir === 'right' ? 1 : dir === 'left' ? -1 : 0; }
 function dr(dir: Dir) { return dir === 'down'  ? 1 : dir === 'up'   ? -1 : 0; }
+function isBorder(terrain: Terrain, c: number, r: number): boolean {
+  return r <= 0 || r >= terrain.length - 1 || c <= 0 || c >= (terrain[0]?.length ?? 0) - 1;
+}
 
 
 // ── Types ─────────────────────────────────────────────────────────────────────
@@ -85,6 +88,7 @@ export class BrownManager {
     solidAt: (col: number, row: number) => boolean,
     allPlayers: { tileX: number; tileY: number }[],
     applyDig?: (col: number, row: number, digPower: number) => void,
+    tryPush?: (col: number, row: number, dcol: number, drow: number) => boolean,
   ): void {
     for (const b of this.browns) {
       if (b.phase === 'dead') continue;
@@ -122,7 +126,7 @@ export class BrownManager {
           b.y = targetY;
           b.tileX = b.targetTileX;
           b.tileY = b.targetTileY;
-          this.startMove(b, terrain, solidAt, ptx, pty, !!applyDig);
+          this.startMove(b, terrain, solidAt, ptx, pty, !!applyDig, tryPush);
         } else {
           b.x += Math.sign(remX) * SPEED;
           b.y += Math.sign(remY) * SPEED;
@@ -134,7 +138,7 @@ export class BrownManager {
           b.animFrame = (b.animFrame + 1) % 4;
         }
       } else {
-        this.startMove(b, terrain, solidAt, ptx, pty, !!applyDig);
+        this.startMove(b, terrain, solidAt, ptx, pty, !!applyDig, tryPush);
       }
     }
   }
@@ -145,20 +149,56 @@ export class BrownManager {
     return !isStone(terrain, nc, nr) && !solidAt(nc, nr);
   }
 
-  private startMove(b: BrownEntity, terrain: Terrain, solidAt: (col: number, row: number) => boolean, _ptx: number, _pty: number, _canDig: boolean): void {
+  private startMove(b: BrownEntity, terrain: Terrain, solidAt: (col: number, row: number) => boolean, _ptx: number, _pty: number, canDig: boolean, tryPush?: (col: number, row: number, dcol: number, drow: number) => boolean): void {
+    const canPushDir = (dir: Dir): boolean => {
+      if (!tryPush) return false;
+      const nc = b.tileX + dc(dir), nr = b.tileY + dr(dir);
+      if (isStone(terrain, nc, nr) || !solidAt(nc, nr)) return false;
+      return !isStone(terrain, nc + dc(dir), nr + dr(dir)) && !solidAt(nc + dc(dir), nr + dr(dir));
+    };
     // Patrol randomly (prefer not to reverse)
     const reverseB: Dir = b.dir === 'up' ? 'down' : b.dir === 'down' ? 'up' : b.dir === 'left' ? 'right' : 'left';
-    if (Math.random() < TURN_CHANCE || !this.canMove(b, b.dir, terrain, solidAt)) {
-      const available = DIRS.filter(d => this.canMove(b, d, terrain, solidAt));
+    if (Math.random() < TURN_CHANCE || (!this.canMove(b, b.dir, terrain, solidAt) && !canPushDir(b.dir))) {
+      const available = DIRS.filter(d => this.canMove(b, d, terrain, solidAt) || canPushDir(d));
       const preferred = available.filter(d => d !== reverseB);
       const choices = preferred.length > 0 ? preferred : available;
-      if (choices.length > 0) b.dir = choices[Math.floor(Math.random() * choices.length)];
+      if (choices.length > 0) {
+        b.dir = choices[Math.floor(Math.random() * choices.length)];
+      } else if (canDig) {
+        const shuffled = [...DIRS].sort(() => Math.random() - 0.5);
+        for (const dir of shuffled) {
+          const nc = b.tileX + dc(dir), nr = b.tileY + dr(dir);
+          if (isStone(terrain, nc, nr) && !solidAt(nc, nr) && !isBorder(terrain, nc, nr)) {
+            b.dir = dir; b.digTileX = nc; b.digTileY = nr; b.digging = true; return;
+          }
+        }
+        b.moving = false; return;
+      }
     }
     if (this.canMove(b, b.dir, terrain, solidAt)) {
       b.targetTileX = b.tileX + dc(b.dir);
       b.targetTileY = b.tileY + dr(b.dir);
       b.moving = true;
       return;
+    }
+    if (canDig) {
+      const nc = b.tileX + dc(b.dir), nr = b.tileY + dr(b.dir);
+      if (isStone(terrain, nc, nr) && !solidAt(nc, nr) && !isBorder(terrain, nc, nr)) {
+        b.digTileX = nc; b.digTileY = nr; b.digging = true; return;
+      }
+    }
+    if (canPushDir(b.dir)) {
+      const dcol = dc(b.dir), drow = dr(b.dir);
+      const nc = b.tileX + dcol, nr = b.tileY + drow;
+      if (tryPush!(nc, nr, dcol, drow)) {
+        b.targetTileX = nc; b.targetTileY = nr; b.moving = true;
+        return;
+      }
+      const alt = DIRS.filter(d => d !== b.dir && this.canMove(b, d, terrain, solidAt));
+      if (alt.length > 0) {
+        b.dir = alt[Math.floor(Math.random() * alt.length)];
+        b.targetTileX = b.tileX + dc(b.dir); b.targetTileY = b.tileY + dr(b.dir); b.moving = true; return;
+      }
     }
     b.moving = false;
   }

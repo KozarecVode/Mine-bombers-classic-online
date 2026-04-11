@@ -107,6 +107,7 @@ export class CloneManager {
     digPower: number,
     applyDig?: (col: number, row: number, digPower: number) => void,
     allPlayerTiles: Map<string, number> = new Map(),
+    tryPush?: (col: number, row: number, dcol: number, drow: number) => boolean,
   ): Array<{ tileX: number; tileY: number; dir: Exclude<Dir, "none">; color: number }> {
     const grenadeThrows: Array<{ tileX: number; tileY: number; dir: Exclude<Dir, "none">; color: number }> = [];
 
@@ -142,7 +143,7 @@ export class CloneManager {
         // Abort dig if the target became a non-diggable entity (wall, door, etc.)
         if (solidAt(e.digTileX, e.digTileY)) {
           e.digging = false;
-          this.startMove(e, terrain, solidAt, !!applyDig);
+          this.startMove(e, terrain, solidAt, !!applyDig, tryPush);
           continue;
         }
         if (!isStone(terrain, e.digTileX, e.digTileY)) {
@@ -172,7 +173,7 @@ export class CloneManager {
           e.y = targetY;
           e.tileX = e.targetTileX;
           e.tileY = e.targetTileY;
-          this.startMove(e, terrain, solidAt, !!applyDig);
+          this.startMove(e, terrain, solidAt, !!applyDig, tryPush);
         } else {
           e.x += Math.sign(remX) * SPEED;
           e.y += Math.sign(remY) * SPEED;
@@ -288,6 +289,8 @@ export class CloneManager {
           )
         )
           return dir;
+        // Solid entity (boulder, door, bomb, etc.) blocks LOS
+        if (solidAt(c, r)) break;
       }
     }
     return null;
@@ -299,9 +302,15 @@ export class CloneManager {
     return !isStone(terrain, nc, nr) && !solidAt(nc, nr);
   }
 
-  private startMove(e: CloneEntity, terrain: Terrain, solidAt: (col: number, row: number) => boolean, canDig: boolean): void {
+  private startMove(e: CloneEntity, terrain: Terrain, solidAt: (col: number, row: number) => boolean, canDig: boolean, tryPush?: (col: number, row: number, dcol: number, drow: number) => boolean): void {
+    const canPushDir = (dir: Dir): boolean => {
+      if (!tryPush) return false;
+      const nc = e.tileX + dc(dir), nr = e.tileY + dr(dir);
+      if (isStone(terrain, nc, nr) || !solidAt(nc, nr)) return false;
+      return !isStone(terrain, nc + dc(dir), nr + dr(dir)) && !solidAt(nc + dc(dir), nr + dr(dir));
+    };
     const wantTurn = Math.random() < TURN_CHANCE;
-    if (wantTurn || !this.canMove(e, e.dir, terrain, solidAt)) {
+    if (wantTurn || (!this.canMove(e, e.dir, terrain, solidAt) && !canPushDir(e.dir))) {
       const reverse: Dir = e.dir === "up" ? "down" : e.dir === "down" ? "up" : e.dir === "left" ? "right" : "left";
       const walkable = DIRS.filter((d) => this.canMove(e, d, terrain, solidAt));
 
@@ -368,9 +377,26 @@ export class CloneManager {
       }
     }
 
-    e.targetTileX = e.tileX + dc(e.dir);
-    e.targetTileY = e.tileY + dr(e.dir);
-    e.moving = true;
+    if (this.canMove(e, e.dir, terrain, solidAt)) {
+      e.targetTileX = e.tileX + dc(e.dir);
+      e.targetTileY = e.tileY + dr(e.dir);
+      e.moving = true;
+      return;
+    }
+    if (canPushDir(e.dir)) {
+      const dcol = dc(e.dir), drow = dr(e.dir);
+      const nc = e.tileX + dcol, nr = e.tileY + drow;
+      if (tryPush!(nc, nr, dcol, drow)) {
+        e.targetTileX = nc; e.targetTileY = nr; e.moving = true;
+        return;
+      }
+      const alt = DIRS.filter(d => d !== e.dir && this.canMove(e, d, terrain, solidAt));
+      if (alt.length > 0) {
+        e.dir = alt[Math.floor(Math.random() * alt.length)];
+        e.targetTileX = e.tileX + dc(e.dir); e.targetTileY = e.tileY + dr(e.dir); e.moving = true; return;
+      }
+    }
+    e.moving = false;
   }
 
   getEntities(): CloneEntity[] {

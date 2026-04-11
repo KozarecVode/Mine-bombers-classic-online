@@ -88,27 +88,32 @@ export class BombManager {
 
   enableSelfAuthorityAt(tileX: number, tileY: number): void {
     const e = this.entities.find((e) => e.tileX === tileX && e.tileY === tileY && e.phase === "fusing");
-    if (e) { e.selfAuthority = true; e.tick = 0; } // reset tick so fuse syncs from host confirmation
+    if (e) {
+      e.selfAuthority = true;
+      e.tick = 0;
+    } // reset tick so fuse syncs from host confirmation
   }
 
   forcePhaseAt(tileX: number, tileY: number, phase: BombPhase, terrain: Terrain): void {
-    const e = this.entities.find(e => e.tileX === tileX && e.tileY === tileY);
+    const e = this.entities.find((e) => e.tileX === tileX && e.tileY === tileY);
     if (!e || e.phase === phase) return;
-    if (phase === 'disabled') {
-      e.phase = 'disabled';
+    if (phase === "disabled") {
+      e.phase = "disabled";
       e.tick = 0;
-    } else if (phase === 'exploding' && e.phase === 'fusing') {
-      e.phase = 'exploding';
+    } else if (phase === "exploding" && e.phase === "fusing") {
+      e.phase = "exploding";
       e.tick = 0;
       this.applyExplosion(e, terrain);
     }
   }
 
   applyExplosion(e: BombEntity, terrain: Terrain): void {
-    const rows = terrain.length, cols = terrain[0].length;
+    const rows = terrain.length,
+      cols = terrain[0].length;
     const visual: [number, number][] = [];
     for (const [dx, dy] of this.pattern) {
-      const col = e.tileX + dx, row = e.tileY + dy;
+      const col = e.tileX + dx,
+        row = e.tileY + dy;
       if (row < 0 || row >= rows || col < 0 || col >= cols) continue;
       if (row === 0 || row === rows - 1 || col === 0 || col === cols - 1) continue;
       visual.push([col, row]);
@@ -152,7 +157,6 @@ export class BombManager {
     return this.entities.some((e) => (e.phase === "fusing" || e.phase === "disabled") && !e.grace && e.tileX === col && e.tileY === row);
   }
 
-
   tryPush(col: number, row: number, dcol: number, drow: number, terrain: Terrain): boolean {
     const e = this.entities.find((e) => (e.phase === "fusing" || e.phase === "disabled") && e.tileX === col && e.tileY === row);
     if (!e) return true;
@@ -167,8 +171,8 @@ export class BombManager {
 
   extinguishAt(col: number, row: number): void {
     for (const e of this.entities) {
-      if (e.phase === 'fusing' && e.tileX === col && e.tileY === row) {
-        e.phase = 'disabled';
+      if (e.phase === "fusing" && e.tileX === col && e.tileY === row) {
+        e.phase = "disabled";
         e.tick = 0;
       }
     }
